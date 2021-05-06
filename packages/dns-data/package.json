@@ -1,0 +1,19 @@
+{
+  "name": "@dnsjs/dns",
+  "version": "0.0.1",
+  "description": "dnsjs dns core data model",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "keywords": [
+    "DNS"
+  ],
+  "author": "Shigeya Suzuki",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^7.25.0",
+    "jest": "^26.6.3",
+    "typescript": "^4.2.4"
+  }
+}
