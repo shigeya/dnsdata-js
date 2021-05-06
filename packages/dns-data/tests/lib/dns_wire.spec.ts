@@ -1,11 +1,26 @@
 // Spec on: Converting between DNS wire format and string(utf)
+import each from 'jest-each';
 
 import { domain_name2wire, wire2domain_name } from "../../src/lib/dns_wire";
 
 describe("Domain name wire format conversion library", () => {
 
-    it.todo("can translate valid domain name string to corresponding wire format");
+    describe.each([
+        ["xp.net.",        "\x02xp\x03net!" ],
+        ["Z.ISI.ARPA.",    "\x01z\x03isi\x04arpa!" ],
+        ["FOO.ISI.ARPA.",  "\x03foo\x03isi\x04arpa!" ],
+        ["ARPA.",          "\x04arpa!" ],
+        ["ARPA",           "\x04arpa" ],
+        ["sh.wide.xx.jp.", "\x02sh\x04wide\x02xx\x02jp!" ],
+        ["ns.wide.xx.jp ", "\x02ns\x04wide\x02xx\x02jp" ],
+    ])("domain name <%s>", ( domain_name, wire ) =>{
+        it("can translate to wire format", () => {
+            expect(domain_name2wire(domain_name)).toBe(wire);
+        });
+        it("can translate from wire format", () => {
+            expect(wire2domain_name(wire)).toBe(domain_name);
 
-    it.todo("can translate valid domain name wire format to to corresponding domain name string");
+        });
+    });
 
 });
