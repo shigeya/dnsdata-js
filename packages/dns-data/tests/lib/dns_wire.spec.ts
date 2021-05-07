@@ -1,5 +1,4 @@
 // Spec on: Converting between DNS wire format and string(utf)
-import each from 'jest-each';
 
 import { domain_name2wire, wire2domain_name } from "../../src/lib/dns_wire";
 
