@@ -14,14 +14,14 @@ describe("Domain name wire format conversion library", () => {
     ];
 
     it("can translate to wire format", () => {
-        test_vector.forEach(async (value) => {
-            expect(domain_name2wire(value[0])).toBe(value[1]);
+        test_vector.forEach(async ([domain_name, wire]) => {
+            expect(domain_name2wire(domain_name)).toBe(wire);
         })
     });
 
     it("can translate from wire format", () => {
-        test_vector.forEach(async (value) => {
-            expect(wire2domain_name(value[1])).toBe(value[0].toLowerCase());
+        test_vector.forEach(async ([domain_name, wire]) => {
+            expect(wire2domain_name(wire)).toBe(domain_name.toLowerCase());
         });
     });
 });
