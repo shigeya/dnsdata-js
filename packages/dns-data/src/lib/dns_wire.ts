@@ -29,5 +29,24 @@ export function domain_name2wire(domain_name: string): string {
 };
 
 export function wire2domain_name(wire: string): string {
-    return "Y";
+    var x = "";
+    let w = wire;
+    let l = w.length;
+
+    for (var i = 0; i < l;) {
+        let s = w.charCodeAt(i);
+        if (s != 0x00) {
+            if (i != 0) {
+                x += ".";
+            }
+            ++i;
+            x += w.substring(i, i + s);
+            i += s;
+        }
+        else { // terminal dot
+            ++i;
+            x += ".";
+        }
+    }
+    return x;
 };

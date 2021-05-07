@@ -17,9 +17,9 @@ describe("Domain name wire format conversion library", () => {
         it("can translate to wire format", async () => {
             expect(domain_name2wire(domain_name)).toBe(wire);
         });
-        // it.todo("can translate from wire format", async () => {
-        //     expect(wire2domain_name(wire)).toBe(domain_name);
-        // });
+        it("can translate from wire format", async () => {
+            expect(wire2domain_name(wire)).toBe(domain_name.toLowerCase());
+        });
     });
 
 });
