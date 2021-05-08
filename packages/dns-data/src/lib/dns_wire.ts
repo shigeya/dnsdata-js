@@ -7,6 +7,7 @@ export function domain_name2wire(domain_name: string): string {
 
     for (var i = 0, j = 0; i < l;) {
         for (j = i; j < l && d[j] != '.'; ++j) {
+            ;
         }
 
         if (j - i != 0) { // if there is text to copy
