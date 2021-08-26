@@ -15,7 +15,7 @@ export function OpCodeToString(opcode: ns_opcode) : string {
         case 5 /* ns_o_update */ :	return "Update"; // Zone update message.
 
         default: 
-            return `OpCodeToString: unknown ns_opcode <${opcode}>`;
+            throw new RangeError(`OpCodeToString: unknown ns_opcode <${opcode}>`);
     }
 }
 export function StringToOpCode(str: string) : ns_opcode {
@@ -28,7 +28,7 @@ export function StringToOpCode(str: string) : ns_opcode {
         case "Update" /* ns_o_update */ :	return 5; // Zone update message.
 
         default: 
-            return -1;
+            throw new RangeError();
     }
 }
 
@@ -55,7 +55,8 @@ export function RCodeToString(rcode: ns_rcode) : string {
     case 17 /* ns_r_badkey */:	return "BADKEY";
     case 18 /* ns_r_badtime */:	return "BADTIME";
 
-    default: return `RCodeToString: unknown ns_rcode <${rcode}>`;
+    default:
+        throw new RangeError(`RCodeToString: unknown ns_rcode <${rcode}>`);
     }
 }
 
@@ -81,7 +82,8 @@ export function StringToRCode(str: string) : ns_rcode {
     case "BADKEY" /* ns_r_badkey */:	return 17;
     case "BADTIME" /* ns_r_badtime */:	return 18;
 
-    default: return -1;
+    default:
+        throw new RangeError();
     }
 }
 
@@ -176,7 +178,8 @@ export function RRTypeToString(type: ns_type)
 //     case 32768 /*ns_t_ta*/:     return "TA";
 //     case 32769 /*ns_t_dlv*/:    return "DLV";
 
-    default: return `RRTypeToString: unknown ns_type: <${type}>`;
+    default:
+        throw new RangeError(`RRTypeToString: unknown ns_type: <${type}>`);
     }
 }
 
@@ -271,7 +274,8 @@ export function StringToRRType(str: string) : ns_type
 //     case 32768 /*ns_t_ta*/:     return "TA";
 //     case 32769 /*ns_t_dlv*/:    return "DLV";
 
-    default: return -1;
+    default:
+        throw new RangeError();
     }
 }
 
@@ -286,7 +290,8 @@ export function RRClassToString(klass: ns_class)
     // Query class values which do not appear in resource records */
     case 254 /*ns_c_none*/:	return "NONE"; // for prereq. sections in update requests
     case 255 /*ns_c_any*/:	return "ANY";           // Wildcard match
-    default: return `RRClassToString: unknown ns_class: <${klass}>`;
+    default:
+        throw new RangeError(`RRClassToString: unknown ns_class: <${klass}>`);
     }
 }
 
@@ -301,7 +306,8 @@ export function StringToRRClass(str: string) : ns_class
     // Query class values which do not appear in resource records */
     case "NONE" /*ns_c_none*/:	return 254; // for prereq. sections in update requests
     case "ANY" /*ns_c_any*/:	return 255;           // Wildcard match
-    default: return -1;
+    default:
+        throw new RangeError();
     }
 }
 // const String2QType_Map = {

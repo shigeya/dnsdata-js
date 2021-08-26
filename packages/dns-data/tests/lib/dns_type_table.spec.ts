@@ -29,7 +29,7 @@ describe("OpCodeToString", () => {
     });
 
     it("can detect illegal opcode string", () => {
-        expect(OpCodeToString(3)).toBe("OpCodeToString: unknown ns_opcode <3>");
+        expect( () => { OpCodeToString(3) } ).toThrow("OpCodeToString: unknown ns_opcode <3>");
     });
 });
 
@@ -42,7 +42,7 @@ describe("StringToOpCode", () => {
     });
 
     it("can detect illegal opcode string", () => {
-        expect(StringToOpCode("XXX")).toBe(-1);
+        expect( () => { StringToOpCode("XXX") } ).toThrow(RangeError);
     });
 });
 
@@ -73,7 +73,7 @@ describe("RCodeToString", () => {
     });
 
     it("can detect illegal rcode", () => {
-        expect(RCodeToString(11)).toBe("RCodeToString: unknown ns_rcode <11>");
+        expect( () => { RCodeToString(11) } ).toThrow("RCodeToString: unknown ns_rcode <11>");
     });
 });
 
@@ -85,7 +85,7 @@ describe("StringToRCode", () => {
     });
 
     it("can detect illegal rcode", () => {
-        expect(StringToRCode("XXX")).toBe(-1);
+        expect( () => { StringToRCode("XXX") } ).toThrow(RangeError);
     });
 });
 
@@ -116,8 +116,8 @@ describe("RRTypeToString", () => {
         })
     });
 
-    it("can detect illegal rrtype", () => {
-        expect(RRTypeToString(999)).toBe("RRTypeToString: unknown ns_type: <999>");
+    it("can detect illegal RR type", () => {
+        expect( () => { RRTypeToString(999) } ).toThrow("RRTypeToString: unknown ns_type: <999>");
     });
     
 });
@@ -130,7 +130,7 @@ describe("StringToRRType", () => {
     });
 
     it("can detect illegal rrtype string", () => {
-        expect(StringToRRType("XXX")).toBe(-1);
+        expect( () => { StringToRRType("XXX") } ).toThrow(RangeError);
     });
 });
 
@@ -153,8 +153,8 @@ describe("RRClassToString", () => {
         })
     });
 
-    it("can detect illegal qclass", () => {
-        expect(RRClassToString(999)).toBe("RRClassToString: unknown ns_class: <999>");
+    it("can detect illegal　RR class", () => {
+        expect( () => { RRClassToString(999) } ).toThrow("RRClassToString: unknown ns_class: <999>");
     });
 });
 
@@ -165,6 +165,6 @@ describe("RRClassToString", () => {
         })
     });
     it("can detect illegal qclass string", () => {
-        expect(StringToRRClass("XXX")).toBe(-1);
+        expect( () => { StringToRRClass("XXX") } ).toThrow(RangeError);
     });
 });
