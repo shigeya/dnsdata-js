@@ -24,6 +24,14 @@ describe("DNSKey", () => {
         expect(key.key_tag).toBeLessThan(65536);
     });
 
+    it("computes key tag for algorithm 1 (RSAMD5)", () => {
+        // Algorithm 1 uses last 2 bytes of key_data as key tag
+        const key_data = new Uint8Array([0x01, 0x02, 0x03, 0xAB, 0xCD]);
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "DNSKEY", "257 3 1 AQID");
+        const key = new DNSKey(rr, 257, 3, 1, key_data);
+        expect(key.key_tag).toBe(0xABCD);
+    });
+
     it("identifies KSK vs ZSK", () => {
         const ksk = new DNSKey(dnskey_rr, "257 3 5 AQPSKmynfzW4kyBv015MUG2DeIQ3Cbl+BBZH4b/0PY1kxkmvHjcZc8nokfzj31GajIQKY+5CptLr3buXA10hWqTkF7H6RfoRqXQeogmMHfpftf6zMv1LyBUgia7za6ZEzOJBOztyvhjL742iU/TpPSEDhm2SNKLijfUppn1UaNvv4w==");
         expect(ksk.is_zone_key()).toBe(true);

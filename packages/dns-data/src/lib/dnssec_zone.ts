@@ -113,6 +113,13 @@ export class DNSSecZone extends Zone {
                 }
             }
             break;
+
+        case KeyVerifyMode.CSK:
+            // CSK (Combined Signing Key) acts as both KSK and ZSK
+            if (dnskey.is_secure_entry_point()) {
+                if (!this.verify_ksk(dnskey)) return false;
+            }
+            break;
         }
 
         const digest_target = this.create_digest_target(rrsig, name, type);

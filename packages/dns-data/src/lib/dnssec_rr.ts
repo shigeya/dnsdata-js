@@ -202,8 +202,12 @@ export class DNSKey extends ResourceRecordHandler {
 
     private _calc_key_tag(): number {
         // RFC4034 Appendix B
+        // Algorithm 1 (RSAMD5) uses a special key tag calculation:
+        // the low 16 bits of the key modulus (last 2 bytes of key_data)
         if (this.algorithm === 1) {
-            throw new DNSZonePresentationFormatError("Algorithm 1 is not supported");
+            if (this.key_data.length < 2) return 0;
+            return ((this.key_data[this.key_data.length - 2] << 8) |
+                     this.key_data[this.key_data.length - 1]) & 0xffff;
         }
         let value = 0;
         value += this.flags & 0xffff;
