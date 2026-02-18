@@ -91,6 +91,43 @@ function parse_ipv6(addr: string): Uint8Array | null {
     return bytes;
 }
 
+// Parse TXT value: handles quoted strings and bare strings
+function parse_txt_value(value: string): string[] {
+    const result: string[] = [];
+    let i = 0;
+    while (i < value.length) {
+        // Skip whitespace
+        while (i < value.length && /\s/.test(value[i])) i++;
+        if (i >= value.length) break;
+
+        if (value[i] === '"') {
+            // Quoted string
+            i++; // skip opening quote
+            let s = '';
+            while (i < value.length && value[i] !== '"') {
+                if (value[i] === '\\' && i + 1 < value.length) {
+                    i++;
+                    s += value[i];
+                } else {
+                    s += value[i];
+                }
+                i++;
+            }
+            if (i < value.length) i++; // skip closing quote
+            result.push(s);
+        } else {
+            // Bare string (until whitespace)
+            let s = '';
+            while (i < value.length && !/\s/.test(value[i])) {
+                s += value[i];
+                i++;
+            }
+            result.push(s);
+        }
+    }
+    return result;
+}
+
 // Resource Record
 export class ResourceRecord {
     readonly label: string;
@@ -140,7 +177,11 @@ export class ResourceRecord {
         case 2 /*NS*/:      this._wire_body_ns(builder); break;
         case 6 /*SOA*/:     this._wire_body_soa(builder); break;
         case 12 /*PTR*/:    this._wire_body_ns(builder); break; // same format as NS
+        case 15 /*MX*/:     this._wire_body_mx(builder); break;
+        case 16 /*TXT*/:    this._wire_body_txt(builder); break;
         case 28 /*AAAA*/:   this._wire_body_aaaa(builder); break;
+        case 33 /*SRV*/:    this._wire_body_srv(builder); break;
+        case 257 /*CAA*/:   this._wire_body_caa(builder); break;
         default: break;
         }
     }
@@ -181,6 +222,69 @@ export class ResourceRecord {
         if (!ip) return;
         builder.append_uint16(16);
         builder.append_bytes(ip);
+    }
+
+    // MX: preference(2) + exchange(wire domain name)
+    private _wire_body_mx(builder: WireBuilder): void {
+        const m = this.value.match(/^(\d+)\s+(\S+)/);
+        if (!m) return;
+        const preference = parseInt(m[1]);
+        const exchange_wire = domain_name2wire(m[2]);
+        builder.append_uint16(2 + exchange_wire.length); // rdlength
+        builder.append_uint16(preference);
+        builder.append_bytes(exchange_wire);
+    }
+
+    // TXT: one or more character-strings, each prefixed by length byte
+    private _wire_body_txt(builder: WireBuilder): void {
+        const strings = parse_txt_value(this.value);
+        let total_len = 0;
+        const encoded: Uint8Array[] = [];
+        for (const s of strings) {
+            const bytes = Buffer.from(s, 'utf8');
+            // Split into 255-byte chunks
+            for (let off = 0; off < bytes.length || (off === 0 && bytes.length === 0); off += 255) {
+                const chunk = bytes.slice(off, Math.min(off + 255, bytes.length));
+                const entry = new Uint8Array(1 + chunk.length);
+                entry[0] = chunk.length;
+                entry.set(chunk, 1);
+                encoded.push(entry);
+                total_len += entry.length;
+            }
+        }
+        builder.append_uint16(total_len);
+        for (const e of encoded) {
+            builder.append_bytes(e);
+        }
+    }
+
+    // SRV: priority(2) + weight(2) + port(2) + target(wire domain name)
+    private _wire_body_srv(builder: WireBuilder): void {
+        const m = this.value.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/);
+        if (!m) return;
+        const priority = parseInt(m[1]);
+        const weight = parseInt(m[2]);
+        const port = parseInt(m[3]);
+        const target_wire = domain_name2wire(m[4]);
+        builder.append_uint16(6 + target_wire.length); // rdlength
+        builder.append_uint16(priority);
+        builder.append_uint16(weight);
+        builder.append_uint16(port);
+        builder.append_bytes(target_wire);
+    }
+
+    // CAA: flags(1) + tag_length(1) + tag + value
+    private _wire_body_caa(builder: WireBuilder): void {
+        const m = this.value.match(/^(\d+)\s+(\S+)\s+"([^"]*)"/);
+        if (!m) return;
+        const flags = parseInt(m[1]);
+        const tag = Buffer.from(m[2], 'ascii');
+        const caa_value = Buffer.from(m[3], 'utf8');
+        builder.append_uint16(2 + tag.length + caa_value.length); // rdlength
+        builder.append_uint8(flags);
+        builder.append_uint8(tag.length);
+        builder.append_bytes(tag);
+        builder.append_bytes(caa_value);
     }
 
     to_string(): string {

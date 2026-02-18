@@ -76,6 +76,57 @@ describe("ResourceRecord", () => {
         expect(result[17]).toBe(0x01); // last byte
     });
 
+    it("builds MX record wire body", () => {
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "MX", "10 mail.example.com.");
+        const wb = new WireBuilder();
+        rr.get_wire_body(wb);
+        const result = wb.build();
+        // rdlength(2) + preference(2) + wire name of mail.example.com.
+        // mail.example.com. = 1+4 + 1+7 + 1+3 + 1 = 18 bytes
+        expect(result[0]).toBe(0x00);
+        expect(result[1]).toBe(20); // 2 + 18
+        expect(result[2]).toBe(0x00); // preference high
+        expect(result[3]).toBe(10);   // preference low
+    });
+
+    it("builds TXT record wire body", () => {
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "TXT", '"v=spf1 include:example.com ~all"');
+        const wb = new WireBuilder();
+        rr.get_wire_body(wb);
+        const result = wb.build();
+        const rdlen = (result[0] << 8) | result[1];
+        const txt_str = "v=spf1 include:example.com ~all";
+        // rdlen should be 1 (length byte) + string length
+        expect(rdlen).toBe(1 + txt_str.length);
+        expect(result[2]).toBe(txt_str.length); // character-string length
+    });
+
+    it("builds SRV record wire body", () => {
+        const rr = new ResourceRecord("_sip._tcp.example.com.", 3600, "IN", "SRV", "10 60 5060 sip.example.com.");
+        const wb = new WireBuilder();
+        rr.get_wire_body(wb);
+        const result = wb.build();
+        // rdlength(2) + priority(2) + weight(2) + port(2) + wire name
+        // sip.example.com. = 1+3 + 1+7 + 1+3 + 1 = 17 bytes
+        const rdlen = (result[0] << 8) | result[1];
+        expect(rdlen).toBe(6 + 17); // 23
+        expect(result[2]).toBe(0x00); expect(result[3]).toBe(10);   // priority
+        expect(result[4]).toBe(0x00); expect(result[5]).toBe(60);   // weight
+        expect(result[6]).toBe(0x13); expect(result[7]).toBe(0xc4); // port 5060
+    });
+
+    it("builds CAA record wire body", () => {
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "CAA", '0 issue "letsencrypt.org"');
+        const wb = new WireBuilder();
+        rr.get_wire_body(wb);
+        const result = wb.build();
+        const rdlen = (result[0] << 8) | result[1];
+        // flags(1) + tag_len(1) + "issue"(5) + "letsencrypt.org"(15) = 22
+        expect(rdlen).toBe(22);
+        expect(result[2]).toBe(0);   // flags
+        expect(result[3]).toBe(5);   // tag length
+    });
+
     it("renders to_string correctly", () => {
         const rr = new ResourceRecord("example.com.", 3600, "IN", "A", "1.2.3.4");
         expect(rr.to_string()).toBe("example.com. 3600 IN A 1.2.3.4");

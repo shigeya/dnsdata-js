@@ -105,7 +105,7 @@ export function RRTypeToString(type: ns_type)
      case 12 /*ns_t_ptr*/:      return "PTR";           // Domain name pointer.
 //     case 13 /*ns_t_hinfo*/:    return "HINFO";         // Host information.
 //     case 14 /*ns_t_minfo*/:    return "MINFO";         // Mailbox information.
-//     case 15 /*ns_t_mx*/:       return "MX";            // Mail routing information.
+    case 15 /*ns_t_mx*/:       return "MX";            // Mail routing information.
     case 16 /*ns_t_txt*/:      return "TXT";           // Text strings.
 //     case 17 /*ns_t_rp*/:       return "RP";            // Responsible person.
 //     case 18 /*ns_t_afsdb*/:    return "AFSDB";         // AFS cell database.
@@ -173,7 +173,7 @@ export function RRTypeToString(type: ns_type)
 //     case 254 /*ns_t_maila*/:    return "MAILA";
 //     case 255 /*ns_t_any*/:      return "ANY";
     case 256 /*ns_t_uri*/:      return "URI";
-//     case 257 /*ns_t_caa*/:      return "CAA";
+    case 257 /*ns_t_caa*/:      return "CAA";
 //     case 258 /*ns_t_avc*/:      return "AVC";
 //     case 32768 /*ns_t_ta*/:     return "TA";
 //     case 32769 /*ns_t_dlv*/:    return "DLV";
@@ -201,7 +201,7 @@ export function StringToRRType(str: string) : ns_type
      case "PTR" /*ns_t_ptr*/:      return 12;           // Domain name pointer.
 //     case 13 /*ns_t_hinfo*/:    return "HINFO";         // Host information.
 //     case 14 /*ns_t_minfo*/:    return "MINFO";         // Mailbox information.
-//     case 15 /*ns_t_mx*/:       return "MX";            // Mail routing information.
+    case "MX" /*ns_t_mx*/:        return 15;           // Mail routing information.
     case "TXT" /*ns_t_txt*/:      return 16;           // Text strings.
 //     case 17 /*ns_t_rp*/:       return "RP";            // Responsible person.
 //     case 18 /*ns_t_afsdb*/:    return "AFSDB";         // AFS cell database.
@@ -269,7 +269,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 254 /*ns_t_maila*/:    return "MAILA";
 //     case 255 /*ns_t_any*/:      return "ANY";
     case "URI" /*ns_t_uri*/:      return 256;
-//     case 257 /*ns_t_caa*/:      return "CAA";
+    case "CAA" /*ns_t_caa*/:      return 257;
 //     case 258 /*ns_t_avc*/:      return "AVC";
 //     case 32768 /*ns_t_ta*/:     return "TA";
 //     case 32769 /*ns_t_dlv*/:    return "DLV";
