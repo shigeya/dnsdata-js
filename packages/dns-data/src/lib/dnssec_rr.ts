@@ -15,7 +15,23 @@ function algo_to_hash(algorithm: number): string {
     case 5: case 7:  return 'sha1';
     case 8:          return 'sha256';
     case 10:         return 'sha512';
+    case 13:         return 'sha256';   // ECDSAP256SHA256
+    case 14:         return 'sha384';   // ECDSAP384SHA384
     default: throw new Error(`Unsupported DNSSEC algorithm: ${algorithm}`);
+    }
+}
+
+// Check if algorithm is ECDSA-based
+function is_ecdsa_algorithm(algorithm: number): boolean {
+    return algorithm === 13 || algorithm === 14;
+}
+
+// Get EC curve name for ECDSA algorithm
+function ecdsa_curve(algorithm: number): string {
+    switch (algorithm) {
+    case 13: return 'P-256';
+    case 14: return 'P-384';
+    default: throw new Error(`Not an ECDSA algorithm: ${algorithm}`);
     }
 }
 
@@ -33,6 +49,86 @@ function ds_digest_type_to_hash(digest_type: number): string {
 function base64url_encode(buf: Uint8Array): string {
     return Buffer.from(buf).toString('base64')
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Convert ECDSA DER signature to DNSSEC raw (r||s) format
+function ecdsa_der_to_raw(der: Uint8Array, algorithm: number): Uint8Array {
+    const coord_len = algorithm === 13 ? 32 : 48;
+    // DER: 0x30 <len> 0x02 <rlen> <r> 0x02 <slen> <s>
+    let offset = 2; // skip 0x30 <len>
+    offset++; // skip 0x02
+    const r_len = der[offset++];
+    const r = der.slice(offset, offset + r_len);
+    offset += r_len;
+    offset++; // skip 0x02
+    const s_len = der[offset++];
+    const s = der.slice(offset, offset + s_len);
+
+    const raw = new Uint8Array(coord_len * 2);
+    // Copy r (right-aligned, strip leading zero if present)
+    const r_start = r.length > coord_len ? r.length - coord_len : 0;
+    const r_dest = coord_len - (r.length - r_start);
+    raw.set(r.slice(r_start), r_dest);
+    // Copy s (right-aligned, strip leading zero if present)
+    const s_start = s.length > coord_len ? s.length - coord_len : 0;
+    const s_dest = coord_len + coord_len - (s.length - s_start);
+    raw.set(s.slice(s_start), s_dest);
+    return raw;
+}
+
+// Convert DNSSEC raw (r||s) signature to DER format for Node.js crypto
+function ecdsa_raw_to_der(raw: Uint8Array, algorithm: number): Buffer {
+    const coord_len = algorithm === 13 ? 32 : 48;
+    let r = raw.slice(0, coord_len);
+    let s = raw.slice(coord_len);
+
+    // Add leading zero if high bit set (DER requires unsigned encoding)
+    if (r[0] & 0x80) {
+        const padded = new Uint8Array(r.length + 1);
+        padded.set(r, 1);
+        r = padded;
+    }
+    if (s[0] & 0x80) {
+        const padded = new Uint8Array(s.length + 1);
+        padded.set(s, 1);
+        s = padded;
+    }
+
+    // Strip leading zeros (but keep at least one byte)
+    while (r.length > 1 && r[0] === 0 && !(r[1] & 0x80)) r = r.slice(1);
+    while (s.length > 1 && s[0] === 0 && !(s[1] & 0x80)) s = s.slice(1);
+
+    const total = 2 + r.length + 2 + s.length;
+    const der = Buffer.alloc(2 + total);
+    let pos = 0;
+    der[pos++] = 0x30; // SEQUENCE
+    der[pos++] = total;
+    der[pos++] = 0x02; // INTEGER
+    der[pos++] = r.length;
+    der.set(r, pos); pos += r.length;
+    der[pos++] = 0x02; // INTEGER
+    der[pos++] = s.length;
+    der.set(s, pos);
+    return der;
+}
+
+// Load ECDSA public key from DNSSEC format (raw x||y coordinates)
+// RFC 6605: key_data is the uncompressed point (x || y) without the 0x04 prefix
+function load_ecdsa_public_key(key_data: Uint8Array, algorithm: number): crypto.KeyObject {
+    const curve = ecdsa_curve(algorithm);
+    const coord_len = algorithm === 13 ? 32 : 48; // P-256: 32 bytes, P-384: 48 bytes
+    if (key_data.length !== coord_len * 2) {
+        throw new Error(`Invalid ECDSA key length: expected ${coord_len * 2}, got ${key_data.length}`);
+    }
+    const x = key_data.slice(0, coord_len);
+    const y = key_data.slice(coord_len);
+    const jwk = {
+        kty: 'EC',
+        crv: curve,
+        x: base64url_encode(x),
+        y: base64url_encode(y),
+    };
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
 }
 
 // Load RSA public key from RFC3110 binary format
@@ -131,7 +227,11 @@ export class DNSKey extends ResourceRecordHandler {
 
     get_public_key(): crypto.KeyObject {
         if (!this._public_key) {
-            this._public_key = load_rsa_public_key_rfc3110(this.key_data);
+            if (is_ecdsa_algorithm(this.algorithm)) {
+                this._public_key = load_ecdsa_public_key(this.key_data, this.algorithm);
+            } else {
+                this._public_key = load_rsa_public_key_rfc3110(this.key_data);
+            }
         }
         return this._public_key;
     }
@@ -143,17 +243,33 @@ export class DNSKey extends ResourceRecordHandler {
     verify(data: Uint8Array, signature: Uint8Array): boolean {
         const pub_key = this.get_public_key();
         const hash = algo_to_hash(this.algorithm);
-        const verifier = crypto.createVerify('RSA-' + hash.toUpperCase());
-        verifier.update(Buffer.from(data));
-        return verifier.verify(pub_key, Buffer.from(signature));
+        if (is_ecdsa_algorithm(this.algorithm)) {
+            // ECDSA: DNSSEC uses raw r||s format, Node.js expects DER
+            const der_sig = ecdsa_raw_to_der(signature, this.algorithm);
+            const verifier = crypto.createVerify(hash.toUpperCase());
+            verifier.update(Buffer.from(data));
+            return verifier.verify(pub_key, der_sig);
+        } else {
+            const verifier = crypto.createVerify('RSA-' + hash.toUpperCase());
+            verifier.update(Buffer.from(data));
+            return verifier.verify(pub_key, Buffer.from(signature));
+        }
     }
 
     sign(data: Uint8Array): Uint8Array {
         if (!this._private_key) throw new Error("No private key set");
         const hash = algo_to_hash(this.algorithm);
-        const signer = crypto.createSign('RSA-' + hash.toUpperCase());
-        signer.update(Buffer.from(data));
-        return new Uint8Array(signer.sign(this._private_key));
+        if (is_ecdsa_algorithm(this.algorithm)) {
+            // ECDSA: Node.js produces DER, DNSSEC expects raw r||s
+            const signer = crypto.createSign(hash.toUpperCase());
+            signer.update(Buffer.from(data));
+            const der_sig = signer.sign(this._private_key);
+            return ecdsa_der_to_raw(new Uint8Array(der_sig), this.algorithm);
+        } else {
+            const signer = crypto.createSign('RSA-' + hash.toUpperCase());
+            signer.update(Buffer.from(data));
+            return new Uint8Array(signer.sign(this._private_key));
+        }
     }
 
     get_isc_key_base_filename(): string {

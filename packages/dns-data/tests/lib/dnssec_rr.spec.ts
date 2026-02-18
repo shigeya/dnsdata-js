@@ -172,6 +172,49 @@ describe("DNSRR_DS", () => {
     });
 });
 
+describe("DNSKey ECDSA P-256 (algorithm 13)", () => {
+    it("can parse ECDSA P-256 DNSKEY", () => {
+        // Generate an EC P-256 key pair and create a DNSKEY
+        const crypto = require('crypto');
+        const { publicKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        const jwk = publicKey.export({ format: 'jwk' } as any) as any;
+
+        // DNSSEC stores x||y (64 bytes for P-256)
+        const x = Buffer.from(jwk.x, 'base64url');
+        const y = Buffer.from(jwk.y, 'base64url');
+        const key_data = Buffer.concat([x, y]);
+        const key_b64 = key_data.toString('base64');
+
+        const value = `257 3 13 ${key_b64}`;
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "DNSKEY", value);
+        const key = new DNSKey(rr, value);
+        expect(key.algorithm).toBe(13);
+        expect(key.key_data.length).toBe(64);
+        expect(key.key_tag).toBeGreaterThan(0);
+    });
+
+    it("can load ECDSA public key and verify signature", () => {
+        const crypto = require('crypto');
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        const jwk = publicKey.export({ format: 'jwk' } as any) as any;
+
+        const x = Buffer.from(jwk.x, 'base64url');
+        const y = Buffer.from(jwk.y, 'base64url');
+        const key_data = Buffer.concat([x, y]);
+        const key_b64 = key_data.toString('base64');
+
+        const value = `257 3 13 ${key_b64}`;
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "DNSKEY", value);
+        const dnskey = new DNSKey(rr, value);
+        dnskey.set_private_key(privateKey);
+
+        const test_data = new Uint8Array([1, 2, 3, 4, 5]);
+        const signature = dnskey.sign(test_data);
+        expect(signature.length).toBe(64); // P-256: r(32) + s(32)
+        expect(dnskey.verify(test_data, signature)).toBe(true);
+    });
+});
+
 describe("Handler registration", () => {
     it("ResourceRecord.get_handler() returns DNSKey for DNSKEY records", () => {
         const rr = new ResourceRecord("example.com.", 3600, "IN", "DNSKEY",

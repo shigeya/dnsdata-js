@@ -167,6 +167,38 @@ describe("DNSSecZone signing", () => {
     });
 });
 
+describe("DNSSecZone ECDSA P-256 (algorithm 13)", () => {
+    it("can sign and verify with ECDSA P-256 key", () => {
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        const jwk = publicKey.export({ format: 'jwk' } as any) as any;
+
+        const x = Buffer.from(jwk.x, 'base64url');
+        const y = Buffer.from(jwk.y, 'base64url');
+        const key_data = Buffer.concat([x, y]);
+        const key_b64 = key_data.toString('base64');
+
+        const zone = new DNSSecZone();
+        zone.add_rr_from_parts("example.com.", 3600, "IN", "SOA",
+            "ns1.example.com. admin.example.com. 2021010101 3600 900 604800 86400");
+        zone.add_rr_from_parts("example.com.", 3600, "IN", "A", "93.184.216.34");
+
+        const dnskey_value = `257 3 13 ${key_b64}`;
+        zone.add_rr_from_parts("example.com.", 3600, "IN", "DNSKEY", dnskey_value);
+
+        const dnskey_rr = zone.find_rr("example.com.", 48)!;
+        const dnskey = dnskey_rr.get_handler() as DNSKey;
+        dnskey.set_private_key(privateKey);
+
+        // Sign A record
+        const rrsig_rr = zone.sign_rr("example.com.", 3600, 1, dnskey, 1000000000, 2000000000);
+        expect(rrsig_rr).not.toBeNull();
+        zone.add_rr(rrsig_rr!);
+
+        // Verify
+        expect(zone.verify_rrset("example.com.", 1)).toBe(true);
+    });
+});
+
 describe("DNSSecZone zone file parsing", () => {
     it("can parse a zone with DNSKEY and RRSIG records", () => {
         const zone = new DNSSecZone();
