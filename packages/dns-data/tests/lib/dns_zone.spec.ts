@@ -159,4 +159,58 @@ example.com. 3600 IN A 1.2.3.4
         expect(zone.find_rr("example.com.", 1)!.value).toBe("1.2.3.4");
         expect(zone.find_rr("example.com.", 1)!.rrclass).toBe(1); // IN
     });
+
+    it("handles $ORIGIN directive", () => {
+        const zone_text = `$ORIGIN example.com.
+@ 3600 IN SOA ns1.example.com. admin.example.com. 2021010101 3600 900 604800 86400
+@ 3600 IN A 1.2.3.4
+www 3600 IN A 5.6.7.8
+ns1 3600 IN A 10.0.0.1
+`;
+        const zone = new Zone();
+        zone.read_string(zone_text);
+        expect(zone.find_rr("example.com.", 6)).not.toBeNull(); // SOA via @
+        expect(zone.find_rr("example.com.", 1)!.value).toBe("1.2.3.4"); // @ -> example.com.
+        expect(zone.find_rr("www.example.com.", 1)!.value).toBe("5.6.7.8"); // relative name
+        expect(zone.find_rr("ns1.example.com.", 1)!.value).toBe("10.0.0.1");
+    });
+
+    it("handles $TTL directive", () => {
+        const zone_text = `$TTL 86400
+example.com. IN SOA ns1.example.com. admin.example.com. 2021010101 3600 900 604800 86400
+example.com. IN A 1.2.3.4
+example.com. 300 IN A 5.6.7.8
+`;
+        const zone = new Zone();
+        zone.read_string(zone_text);
+        expect(zone.find_rr("example.com.", 6)!.ttl).toBe(86400); // uses $TTL
+        const a_records = zone.find_rrset("example.com.", 1);
+        expect(a_records.length).toBe(2);
+        expect(a_records[0].ttl).toBe(86400); // uses $TTL
+        expect(a_records[1].ttl).toBe(300);   // explicit TTL overrides
+    });
+
+    it("handles $ORIGIN with $TTL together", () => {
+        const zone_text = `$ORIGIN example.com.
+$TTL 3600
+@ IN SOA ns1 admin 2021010101 3600 900 604800 86400
+@ IN NS ns1
+@ IN A 93.184.216.34
+www IN A 93.184.216.35
+`;
+        const zone = new Zone();
+        zone.read_string(zone_text);
+        expect(zone.find_rr("example.com.", 6)).not.toBeNull();
+        expect(zone.find_rr("example.com.", 1)!.ttl).toBe(3600);
+        expect(zone.find_rr("www.example.com.", 1)!.value).toBe("93.184.216.35");
+    });
+
+    it("FQDN names are not affected by $ORIGIN", () => {
+        const zone_text = `$ORIGIN example.com.
+other.net. 3600 IN A 1.2.3.4
+`;
+        const zone = new Zone();
+        zone.read_string(zone_text);
+        expect(zone.find_rr("other.net.", 1)!.value).toBe("1.2.3.4");
+    });
 });

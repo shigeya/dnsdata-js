@@ -230,11 +230,20 @@ export class Zone {
         return result;
     }
 
+    // Qualify a name relative to origin: if name doesn't end with '.', append origin
+    private _qualify(name: string, origin: string): string {
+        if (name === '@') return origin;
+        if (name.endsWith('.')) return name;
+        return name + '.' + origin;
+    }
+
     // Parse zone file text
     read_string(text: string): boolean {
         const lines = text.split('\n');
         let continuation = '';
         let prev_label = '';
+        let origin = '';
+        let default_ttl = 0;
 
         for (let line of lines) {
             // Strip comments
@@ -245,9 +254,12 @@ export class Zone {
 
             // Handle continuation with parentheses
             if (continuation) {
-                const close_match = line.match(/^(.*)\)$/);
+                const close_match = line.match(/^(.*)\)(.*)$/);
                 if (close_match) {
                     continuation += ' ' + close_match[1].trim();
+                    if (close_match[2].trim()) {
+                        continuation += ' ' + close_match[2].trim();
+                    }
                     line = continuation;
                     continuation = '';
                 } else {
@@ -255,11 +267,28 @@ export class Zone {
                     continue;
                 }
             } else {
-                const open_match = line.match(/^(.*)\($/);
+                const open_match = line.match(/^(.*)\((.*)$/);
                 if (open_match) {
                     continuation = open_match[1].trim();
+                    if (open_match[2].trim()) {
+                        continuation += ' ' + open_match[2].trim();
+                    }
                     continue;
                 }
+            }
+
+            // Handle $ORIGIN directive
+            const origin_match = line.match(/^\$ORIGIN\s+(\S+)/i);
+            if (origin_match) {
+                origin = origin_match[1];
+                continue;
+            }
+
+            // Handle $TTL directive
+            const ttl_match = line.match(/^\$TTL\s+(\d+)/i);
+            if (ttl_match) {
+                default_ttl = parseInt(ttl_match[1]);
+                continue;
             }
 
             // Supplement label if line starts with whitespace
@@ -270,7 +299,8 @@ export class Zone {
             // Try parsing with explicit class: LABEL TTL CLASS TYPE VALUE
             let m = line.match(/^(\S+)\s+(\d+)\s+(IN)\s+(\S+)\s+(.*)$/);
             if (m) {
-                this.add_rr_from_parts(m[1], parseInt(m[2]), m[3], m[4], m[5]);
+                const label = origin ? this._qualify(m[1], origin) : m[1];
+                this.add_rr_from_parts(label, parseInt(m[2]), m[3], m[4], m[5]);
                 prev_label = m[1];
                 continue;
             }
@@ -278,9 +308,36 @@ export class Zone {
             // Try parsing without class: LABEL TTL TYPE VALUE
             m = line.match(/^(\S+)\s+(\d+)\s+(\S+)\s+(.*)$/);
             if (m) {
-                this.add_rr_from_parts(m[1], parseInt(m[2]), 'IN', m[3], m[4]);
+                const label = origin ? this._qualify(m[1], origin) : m[1];
+                this.add_rr_from_parts(label, parseInt(m[2]), 'IN', m[3], m[4]);
                 prev_label = m[1];
                 continue;
+            }
+
+            // Try parsing with $TTL default: LABEL CLASS TYPE VALUE
+            if (default_ttl > 0) {
+                m = line.match(/^(\S+)\s+(IN)\s+(\S+)\s+(.*)$/);
+                if (m) {
+                    const label = origin ? this._qualify(m[1], origin) : m[1];
+                    this.add_rr_from_parts(label, default_ttl, m[2], m[3], m[4]);
+                    prev_label = m[1];
+                    continue;
+                }
+
+                // LABEL TYPE VALUE (no class, no TTL)
+                m = line.match(/^(\S+)\s+(\S+)\s+(.*)$/);
+                if (m) {
+                    // Only match if the second field looks like an RR type
+                    try {
+                        StringToRRType(m[2]);
+                        const label = origin ? this._qualify(m[1], origin) : m[1];
+                        this.add_rr_from_parts(label, default_ttl, 'IN', m[2], m[3]);
+                        prev_label = m[1];
+                        continue;
+                    } catch (_) {
+                        // Not a valid type, skip
+                    }
+                }
             }
         }
         return true;
