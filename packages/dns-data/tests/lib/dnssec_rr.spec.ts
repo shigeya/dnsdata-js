@@ -215,6 +215,32 @@ describe("DNSKey ECDSA P-256 (algorithm 13)", () => {
     });
 });
 
+describe("DNSKey Ed25519 (algorithm 15)", () => {
+    it("can parse Ed25519 DNSKEY and sign/verify", () => {
+        const crypto = require('crypto');
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+        const jwk = publicKey.export({ format: 'jwk' } as any) as any;
+
+        // Ed25519 public key is 32 bytes raw
+        const key_data = Buffer.from(jwk.x, 'base64url');
+        expect(key_data.length).toBe(32);
+        const key_b64 = key_data.toString('base64');
+
+        const value = `257 3 15 ${key_b64}`;
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "DNSKEY", value);
+        const dnskey = new DNSKey(rr, value);
+        expect(dnskey.algorithm).toBe(15);
+        expect(dnskey.key_data.length).toBe(32);
+
+        dnskey.set_private_key(privateKey);
+
+        const test_data = new Uint8Array([1, 2, 3, 4, 5]);
+        const signature = dnskey.sign(test_data);
+        expect(signature.length).toBe(64); // Ed25519 signature is 64 bytes
+        expect(dnskey.verify(test_data, signature)).toBe(true);
+    });
+});
+
 describe("Handler registration", () => {
     it("ResourceRecord.get_handler() returns DNSKey for DNSKEY records", () => {
         const rr = new ResourceRecord("example.com.", 3600, "IN", "DNSKEY",

@@ -9,7 +9,13 @@ import { StringToRRType, RRTypeToString } from './dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
 import { DNSZonePresentationFormatError } from './dns_exception';
 
+// Check if algorithm is EdDSA-based
+function is_eddsa_algorithm(algorithm: number): boolean {
+    return algorithm === 15 || algorithm === 16;
+}
+
 // Map DNSSEC algorithm code to Node.js hash algorithm name
+// Not applicable for EdDSA (15, 16) which uses built-in hashing
 function algo_to_hash(algorithm: number): string {
     switch (algorithm) {
     case 5: case 7:  return 'sha1';
@@ -131,6 +137,18 @@ function load_ecdsa_public_key(key_data: Uint8Array, algorithm: number): crypto.
     return crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
 }
 
+// Load Ed25519/Ed448 public key from DNSSEC format (raw key bytes)
+// RFC 8080: key_data is the raw public key (32 bytes for Ed25519, 57 bytes for Ed448)
+function load_eddsa_public_key(key_data: Uint8Array, algorithm: number): crypto.KeyObject {
+    const crv = algorithm === 15 ? 'Ed25519' : 'Ed448';
+    const jwk = {
+        kty: 'OKP',
+        crv: crv,
+        x: base64url_encode(key_data),
+    };
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
+}
+
 // Load RSA public key from RFC3110 binary format
 function load_rsa_public_key_rfc3110(key_data: Uint8Array): crypto.KeyObject {
     let offset = 0;
@@ -227,7 +245,9 @@ export class DNSKey extends ResourceRecordHandler {
 
     get_public_key(): crypto.KeyObject {
         if (!this._public_key) {
-            if (is_ecdsa_algorithm(this.algorithm)) {
+            if (is_eddsa_algorithm(this.algorithm)) {
+                this._public_key = load_eddsa_public_key(this.key_data, this.algorithm);
+            } else if (is_ecdsa_algorithm(this.algorithm)) {
                 this._public_key = load_ecdsa_public_key(this.key_data, this.algorithm);
             } else {
                 this._public_key = load_rsa_public_key_rfc3110(this.key_data);
@@ -242,14 +262,18 @@ export class DNSKey extends ResourceRecordHandler {
 
     verify(data: Uint8Array, signature: Uint8Array): boolean {
         const pub_key = this.get_public_key();
-        const hash = algo_to_hash(this.algorithm);
-        if (is_ecdsa_algorithm(this.algorithm)) {
+        if (is_eddsa_algorithm(this.algorithm)) {
+            // EdDSA: uses crypto.verify directly (no separate hash step)
+            return crypto.verify(null, Buffer.from(data), pub_key, Buffer.from(signature));
+        } else if (is_ecdsa_algorithm(this.algorithm)) {
             // ECDSA: DNSSEC uses raw r||s format, Node.js expects DER
+            const hash = algo_to_hash(this.algorithm);
             const der_sig = ecdsa_raw_to_der(signature, this.algorithm);
             const verifier = crypto.createVerify(hash.toUpperCase());
             verifier.update(Buffer.from(data));
             return verifier.verify(pub_key, der_sig);
         } else {
+            const hash = algo_to_hash(this.algorithm);
             const verifier = crypto.createVerify('RSA-' + hash.toUpperCase());
             verifier.update(Buffer.from(data));
             return verifier.verify(pub_key, Buffer.from(signature));
@@ -258,14 +282,18 @@ export class DNSKey extends ResourceRecordHandler {
 
     sign(data: Uint8Array): Uint8Array {
         if (!this._private_key) throw new Error("No private key set");
-        const hash = algo_to_hash(this.algorithm);
-        if (is_ecdsa_algorithm(this.algorithm)) {
+        if (is_eddsa_algorithm(this.algorithm)) {
+            // EdDSA: uses crypto.sign directly (no separate hash step)
+            return new Uint8Array(crypto.sign(null, Buffer.from(data), this._private_key));
+        } else if (is_ecdsa_algorithm(this.algorithm)) {
             // ECDSA: Node.js produces DER, DNSSEC expects raw r||s
+            const hash = algo_to_hash(this.algorithm);
             const signer = crypto.createSign(hash.toUpperCase());
             signer.update(Buffer.from(data));
             const der_sig = signer.sign(this._private_key);
             return ecdsa_der_to_raw(new Uint8Array(der_sig), this.algorithm);
         } else {
+            const hash = algo_to_hash(this.algorithm);
             const signer = crypto.createSign('RSA-' + hash.toUpperCase());
             signer.update(Buffer.from(data));
             return new Uint8Array(signer.sign(this._private_key));

@@ -55,6 +55,25 @@ function load_ecdsa_private_key(d: Buffer, algo: number): crypto.KeyObject {
     return crypto.createPrivateKey({ key: pkcs8_der, format: 'der', type: 'pkcs8' } as any);
 }
 
+// OID for Ed25519: 1.3.101.112
+const OID_ED25519 = Buffer.from([0x06, 0x03, 0x2b, 0x65, 0x70]);
+
+// OID for Ed448: 1.3.101.113
+const OID_ED448 = Buffer.from([0x06, 0x03, 0x2b, 0x65, 0x71]);
+
+// Load EdDSA private key from raw scalar by constructing PKCS#8 DER
+function load_eddsa_private_key(d: Buffer, algo: number): crypto.KeyObject {
+    const oid = algo === 15 ? OID_ED25519 : OID_ED448;
+
+    // PKCS#8 for EdDSA: SEQUENCE { INTEGER 0, SEQUENCE { OID }, OCTET STRING { OCTET STRING d } }
+    const algo_id = der_sequence(oid);
+    const key_octet = der_octet_string(der_octet_string(d));
+    const pkcs8_inner = Buffer.concat([der_integer(0), algo_id, key_octet]);
+    const pkcs8_der = der_sequence(pkcs8_inner);
+
+    return crypto.createPrivateKey({ key: pkcs8_der, format: 'der', type: 'pkcs8' } as any);
+}
+
 // Parse ISC/BIND keygen private key file format
 function parse_keygen_fields(text: string): Map<string, string> {
     const fields = new Map<string, string>();
@@ -87,6 +106,12 @@ export function load_private_key_from_string(text: string): crypto.KeyObject {
         if (!val) throw new Error(`Missing field: ${name}`);
         return Buffer.from(val, 'base64');
     };
+
+    // EdDSA algorithms (15=Ed25519, 16=Ed448)
+    if (algo === 15 || algo === 16) {
+        const private_key_buf = get_field('PrivateKey');
+        return load_eddsa_private_key(private_key_buf, algo);
+    }
 
     // ECDSA algorithms (13=P-256, 14=P-384)
     if (algo === 13 || algo === 14) {

@@ -123,6 +123,45 @@ PrivateKey: ${d_b64}`;
         expect(dnskey.verify(test_data, signature)).toBe(true);
     });
 
+    it("can load Ed25519 private key (algorithm 15)", () => {
+        const { privateKey } = crypto.generateKeyPairSync('ed25519');
+        const jwk = privateKey.export({ format: 'jwk' } as any) as any;
+        const d_b64 = Buffer.from(jwk.d, 'base64url').toString('base64');
+
+        const isc_text = `Private-key-format: v1.2
+Algorithm: 15 (ED25519)
+PrivateKey: ${d_b64}`;
+
+        const loaded = load_private_key_from_string(isc_text);
+        expect(loaded).toBeDefined();
+        expect(loaded.type).toBe('private');
+        expect(loaded.asymmetricKeyType).toBe('ed25519');
+    });
+
+    it("can sign and verify with loaded Ed25519 key", () => {
+        const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+        const priv_jwk = privateKey.export({ format: 'jwk' } as any) as any;
+        const pub_jwk = publicKey.export({ format: 'jwk' } as any) as any;
+        const d_b64 = Buffer.from(priv_jwk.d, 'base64url').toString('base64');
+
+        const isc_text = `Private-key-format: v1.2
+Algorithm: 15 (ED25519)
+PrivateKey: ${d_b64}`;
+
+        const loaded_key = load_private_key_from_string(isc_text);
+
+        const key_data = Buffer.from(pub_jwk.x, 'base64url');
+        const key_b64 = key_data.toString('base64');
+
+        const dnskey_rr = new ResourceRecord("test.local.", 86400, "IN", "DNSKEY", `257 3 15 ${key_b64}`);
+        const dnskey = new DNSKey(dnskey_rr, `257 3 15 ${key_b64}`);
+        dnskey.set_private_key(loaded_key);
+
+        const test_data = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
+        const signature = dnskey.sign(test_data);
+        expect(dnskey.verify(test_data, signature)).toBe(true);
+    });
+
     it("throws for unsupported algorithm", () => {
         const bad_key = `Private-key-format: v1.2
 Algorithm: 99 (UNSUPPORTED)
