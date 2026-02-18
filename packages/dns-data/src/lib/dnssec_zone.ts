@@ -158,7 +158,8 @@ export class DNSSecZone extends Zone {
 
         for (const ds_rr of ds_records) {
             const handler = ds_rr.get_handler();
-            if (handler instanceof DNSRR_DS && handler.digest_type === 2) { // SHA-256 only
+            // Support DS digest types: 1 (SHA-1), 2 (SHA-256), 4 (SHA-384)
+            if (handler instanceof DNSRR_DS && (handler.digest_type === 1 || handler.digest_type === 2 || handler.digest_type === 4)) {
                 if (!this.verify_delegation_signer_with_ds(dnskey, handler)) {
                     return false;
                 }

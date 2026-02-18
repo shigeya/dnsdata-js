@@ -155,6 +155,30 @@ describe("DNSSecZone", () => {
         const bad_ds = new DNSRR_DS(null as any, `${keyTag} 99 2 ${hex_digest}`);
         expect(zone.verify_delegation_signer_with_ds(dnskey, bad_ds)).toBe(false);
     });
+
+    it("verify_delegation_signer_with_ds supports SHA-1 (digest type 1)", () => {
+        const { zone, keyTag } = create_test_zone();
+        const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+
+        const ds_input = dnskey.get_ds_digest_data();
+        const hash = crypto.createHash('sha1').update(Buffer.from(ds_input)).digest();
+        const hex_digest = Buffer.from(hash).toString('hex');
+
+        const ds = new DNSRR_DS(null as any, `${keyTag} ${dnskey.algorithm} 1 ${hex_digest}`);
+        expect(zone.verify_delegation_signer_with_ds(dnskey, ds)).toBe(true);
+    });
+
+    it("verify_delegation_signer_with_ds supports SHA-384 (digest type 4)", () => {
+        const { zone, keyTag } = create_test_zone();
+        const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+
+        const ds_input = dnskey.get_ds_digest_data();
+        const hash = crypto.createHash('sha384').update(Buffer.from(ds_input)).digest();
+        const hex_digest = Buffer.from(hash).toString('hex');
+
+        const ds = new DNSRR_DS(null as any, `${keyTag} ${dnskey.algorithm} 4 ${hex_digest}`);
+        expect(zone.verify_delegation_signer_with_ds(dnskey, ds)).toBe(true);
+    });
 });
 
 describe("DNSSecZone signing", () => {
