@@ -121,19 +121,22 @@ export class DNSSecZone extends Zone {
         return dnskey.verify(digest_target, rrsig.signature);
     }
 
-    // Verify all RRSIGs for an RRset
+    // Verify RRSIGs for an RRset (RFC 4035: any-valid semantics)
     verify_rrset(name: string, type: number,
                  mode: KeyVerifyMode = KeyVerifyMode.None,
                  signer?: string): boolean {
         const rrsigs = this.find_rrsigs(name, type, signer);
         if (rrsigs.length === 0) return false;
 
+        // RFC 4035 Section 5.3.3: An RRset is considered valid if at least
+        // one RRSIG can be validated. A resolver should not treat a failed
+        // RRSIG as evidence that the RRset is bogus if other RRSIGs exist.
         for (const rrsig of rrsigs) {
-            if (!this.verify_rrsig(name, type, rrsig, mode)) {
-                return false;
+            if (this.verify_rrsig(name, type, rrsig, mode)) {
+                return true;
             }
         }
-        return true;
+        return false;
     }
 
     verify_ksk(dnskey: DNSKey): boolean {

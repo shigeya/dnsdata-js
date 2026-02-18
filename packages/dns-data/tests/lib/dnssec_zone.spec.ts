@@ -108,6 +108,23 @@ describe("DNSSecZone", () => {
         expect(zone.verify_rrset("notexist.com.", 1)).toBe(false);
     });
 
+    it("uses any-valid semantics: valid RRSIG + bogus RRSIG still verifies", () => {
+        const { zone } = create_test_zone();
+
+        // Add a bogus RRSIG for the A record (random signature data)
+        const bogus_sig = Buffer.from(new Uint8Array(128)).toString('base64');
+        const rrsigs = zone.find_rrsigs("example.com.", 1);
+        expect(rrsigs.length).toBe(1);
+
+        // Add a second RRSIG with garbage signature but matching key_tag/signer
+        const bogus_value = `A ${rrsigs[0].algorithm} ${rrsigs[0].labels} ` +
+            `3600 2000000000 1000000000 ${rrsigs[0].key_tag} ${rrsigs[0].signer} ${bogus_sig}`;
+        zone.add_rr_from_parts("example.com.", 3600, "IN", "RRSIG", bogus_value);
+
+        // Should still pass because the valid RRSIG exists (any-valid)
+        expect(zone.verify_rrset("example.com.", 1)).toBe(true);
+    });
+
     it("handles secure entry point", () => {
         const { zone } = create_test_zone();
         zone.add_sep("example.com.");
