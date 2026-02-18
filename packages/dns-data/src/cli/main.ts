@@ -3,30 +3,38 @@ import { Resolver } from './resolver';
 import { DoHResolver, DoHProvider } from './resolver_doh';
 import { DNSResolver } from './resolver_dns';
 import { formatOutput } from './output';
-import { verifyDNSSEC } from './dnssec_verifier';
+import { verifyDNSSEC, verifyDNSSECChain } from './dnssec_verifier';
+import { fetchAndUpdateRootAnchors } from './root_anchor_updater';
 
 interface CLIOptions {
     method: 'dns' | 'doh';
     dohProvider: DoHProvider;
     dnssec: boolean;
+    chain: boolean;
+    updateRootAnchors: boolean;
     fqdn: string;
     rrtype: string;
 }
 
 function printUsage(): void {
     console.log(`Usage: npx ts-node src/cli/main.ts [options] <fqdn> <rrtype>
+       npx ts-node src/cli/main.ts --update-root-anchors [--doh-provider google|cloudflare]
 
 Options:
   --method dns|doh              Resolution method (default: doh)
   --doh-provider google|cloudflare  DoH provider (default: google)
   --no-dnssec                   Skip DNSSEC verification
+  --chain                       Full DNSSEC chain verification (root to zone)
+  --update-root-anchors         Fetch IANA root trust anchors and save locally
   --help                        Show this help
 
 Examples:
   npx ts-node src/cli/main.ts example.com A
+  npx ts-node src/cli/main.ts --chain example.com A
+  npx ts-node src/cli/main.ts --chain --doh-provider cloudflare example.com AAAA
   npx ts-node src/cli/main.ts --method dns example.com MX
-  npx ts-node src/cli/main.ts --doh-provider cloudflare example.com AAAA
-  npx ts-node src/cli/main.ts --no-dnssec example.com TXT`);
+  npx ts-node src/cli/main.ts --no-dnssec example.com TXT
+  npx ts-node src/cli/main.ts --update-root-anchors`);
 }
 
 function parseArgs(argv: string[]): CLIOptions {
@@ -35,6 +43,8 @@ function parseArgs(argv: string[]): CLIOptions {
         method: 'doh',
         dohProvider: 'google',
         dnssec: true,
+        chain: false,
+        updateRootAnchors: false,
         fqdn: '',
         rrtype: '',
     };
@@ -64,6 +74,10 @@ function parseArgs(argv: string[]): CLIOptions {
             opts.dohProvider = val;
         } else if (arg === '--no-dnssec') {
             opts.dnssec = false;
+        } else if (arg === '--chain') {
+            opts.chain = true;
+        } else if (arg === '--update-root-anchors') {
+            opts.updateRootAnchors = true;
         } else if (arg.startsWith('-')) {
             console.error(`Error: Unknown option '${arg}'`);
             printUsage();
@@ -72,6 +86,11 @@ function parseArgs(argv: string[]): CLIOptions {
             positional.push(arg);
         }
         i++;
+    }
+
+    // --update-root-anchors doesn't need positional args
+    if (opts.updateRootAnchors) {
+        return opts;
     }
 
     if (positional.length < 2) {
@@ -91,11 +110,29 @@ function parseArgs(argv: string[]): CLIOptions {
         process.exit(1);
     }
 
+    // --no-dnssec and --chain are mutually exclusive
+    if (!opts.dnssec && opts.chain) {
+        console.error('Error: --no-dnssec and --chain are mutually exclusive');
+        process.exit(1);
+    }
+
     return opts;
 }
 
 async function main(): Promise<void> {
     const opts = parseArgs(process.argv);
+
+    // Handle --update-root-anchors
+    if (opts.updateRootAnchors) {
+        try {
+            await fetchAndUpdateRootAnchors(opts.dohProvider);
+        } catch (err: any) {
+            console.error(`Error updating root anchors: ${err.message}`);
+            process.exit(1);
+        }
+        return;
+    }
+
     const rrtype = StringToRRType(opts.rrtype);
 
     // Create resolver
@@ -131,7 +168,11 @@ async function main(): Promise<void> {
             }
         }
         try {
-            verification = await verifyDNSSEC(opts.fqdn, rrtype, dohResponse, opts.dohProvider);
+            if (opts.chain) {
+                verification = await verifyDNSSECChain(opts.fqdn, rrtype, dohResponse, opts.dohProvider);
+            } else {
+                verification = await verifyDNSSEC(opts.fqdn, rrtype, dohResponse, opts.dohProvider);
+            }
         } catch (err: any) {
             console.error(`Warning: DNSSEC verification error: ${err.message}`);
         }

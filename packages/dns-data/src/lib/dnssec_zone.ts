@@ -164,20 +164,17 @@ export class DNSSecZone extends Zone {
         const ds_records = this.find_rrset(dnskey.label, ds_type);
         if (ds_records.length === 0) return false;
 
+        // RFC 4035: any-valid semantics — at least one supported DS must match
         for (const ds_rr of ds_records) {
             const handler = ds_rr.get_handler();
             // Support DS digest types: 1 (SHA-1), 2 (SHA-256), 4 (SHA-384)
             if (handler instanceof DNSRR_DS && (handler.digest_type === 1 || handler.digest_type === 2 || handler.digest_type === 4)) {
-                if (!this.verify_delegation_signer_with_ds(dnskey, handler)) {
-                    return false;
-                }
-                // Also verify the DS record's own RRSIG
-                if (!this.verify_rrset(handler.label, ds_type, KeyVerifyMode.ZSK)) {
-                    return false;
+                if (this.verify_delegation_signer_with_ds(dnskey, handler)) {
+                    return true;
                 }
             }
         }
-        return true;
+        return false;
     }
 
     verify_delegation_signer_with_ds(dnskey: DNSKey, ds: DNSRR_DS): boolean {

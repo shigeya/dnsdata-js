@@ -64,11 +64,15 @@ export function formatOutput(
     }
 
     if (verification) {
-        lines.push(';; DNSSEC VERIFICATION:');
+        // Check if details already contain a Result line (chain verification)
+        const hasResult = verification.details.some(d => d.startsWith('Result:'));
+        lines.push(hasResult ? ';; DNSSEC VERIFICATION (chain):' : ';; DNSSEC VERIFICATION:');
         for (const detail of verification.details) {
             lines.push(`;;   ${detail}`);
         }
-        lines.push(`;;   Result: ${verification.verified ? 'SECURE' : 'INSECURE'}`);
+        if (!hasResult) {
+            lines.push(`;;   Result: ${verification.verified ? 'SECURE' : 'INSECURE'}`);
+        }
         lines.push('');
     }
 
