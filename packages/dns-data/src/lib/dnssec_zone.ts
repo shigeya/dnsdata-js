@@ -6,6 +6,7 @@ import { WireBuilder, compare_uint8arrays } from './dns_wire_util';
 import { StringToRRType, RRTypeToString } from './dns_type_table';
 import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
+import './dane_rr'; // Register TLSA/SMIMEA handlers
 
 export enum KeyVerifyMode {
     None = 0,

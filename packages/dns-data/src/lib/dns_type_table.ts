@@ -143,8 +143,8 @@ export function RRTypeToString(type: ns_type)
 //     case 49 /*ns_t_dhcid*/:	return "DHCID";
     case 50 /*ns_t_nsec3*/:	return "NSEC3";
 //     case 51 /*ns_t_nsec3param*/:return "NSEC3PARAM";
-//     case 52 /*ns_t_tlsa*/:	return "TLSA";
-//     case 53 /*ns_t_smimea*/:	return "SMIMEA";
+    case 52 /*ns_t_tlsa*/:	return "TLSA";
+    case 53 /*ns_t_smimea*/:	return "SMIMEA";
 //     case 55 /*ns_t_hip*/:	return "HIP";
 //     case 56 /*ns_t_ninfo*/:	return "NINFO";
 //     case 57 /*ns_t_rkey*/:	return "RKEY";
@@ -239,8 +239,8 @@ export function StringToRRType(str: string) : ns_type
 //     case 49 /*ns_t_dhcid*/:	return "DHCID";
     case "NSEC3" /*ns_t_nsec3*/:	return 50;
 //     case 51 /*ns_t_nsec3param*/:return "NSEC3PARAM";
-//     case 52 /*ns_t_tlsa*/:	return "TLSA";
-//     case 53 /*ns_t_smimea*/:	return "SMIMEA";
+    case "TLSA" /*ns_t_tlsa*/:	return 52;
+    case "SMIMEA" /*ns_t_smimea*/:	return 53;
 //     case 55 /*ns_t_hip*/:	return "HIP";
 //     case 56 /*ns_t_ninfo*/:	return "NINFO";
 //     case 57 /*ns_t_rkey*/:	return "RKEY";
@@ -328,6 +328,8 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 47 /*ns_t_nsec*/:
     case 48 /*ns_t_dnskey*/:
     case 50 /*ns_t_nsec3*/:
+    case 52 /*ns_t_tlsa*/:
+    case 53 /*ns_t_smimea*/:
     case 256 /*ns_t_uri*/:
         return true;
     default:
