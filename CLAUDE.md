@@ -44,20 +44,21 @@ Source lives in `src/lib/`, tests in `tests/lib/` (pattern: `*.spec.ts`).
 
 #### Zone management
 
-- **`dns_zone.ts`** — `ResourceRecord` class (stores label, TTL, class, type, value text), `ResourceRecordHandler` abstract base, and `Zone` class (record store with zone file parser). Supports per-type wire format builders for A, AAAA, NS, PTR, SOA. Uses a handler registry pattern (`register_rr_handler`) for extensible RR type handling.
+- **`dns_zone.ts`** — `ResourceRecord` class (stores label, TTL, class, type, value text), `ResourceRecordHandler` abstract base, and `Zone` class (record store with zone file parser). Supports per-type wire format builders for A, AAAA, NS, PTR, SOA, MX, TXT, SRV, CAA. Uses a handler registry pattern (`register_rr_handler`) for extensible RR type handling. Zone parser supports `$ORIGIN` and `$TTL` directives.
 - **`dnssec_zone.ts`** — `DNSSecZone` extends `Zone` with DNSSEC operations: `find_rrsigs`, `find_dnskey`, `create_digest_target` (RFC4034 Section 6.2), `verify_rrsig`, `verify_rrset`, `verify_ksk/zsk`, `verify_delegation_signer`, and `sign_rr`.
 
 #### DNSSEC record handlers
 
-- **`dnssec_rr.ts`** — `DNSKey` (DNSKEY parsing, key tag computation per RFC4034 Appendix B, RSA public key loading from RFC3110, sign/verify via Node.js crypto), `RRSig` (RRSIG parsing, RDATA digest target construction), `DNSRR_DS` (DS parsing, digest verification). These register themselves into the handler registry on module load.
-- **`dnssec_key_loader.ts`** — Loads RSA private keys from ISC/BIND keygen file format (key=value pairs with base64-encoded components → JWK → `crypto.createPrivateKey`).
+- **`dnssec_rr.ts`** — `DNSKey` (DNSKEY parsing, key tag computation per RFC4034 Appendix B, RSA/ECDSA/Ed25519 public key loading, sign/verify via Node.js crypto), `RRSig` (RRSIG parsing, RDATA digest target construction), `DNSRR_DS` (DS parsing, digest verification with SHA-1/SHA-256/SHA-384), `DNSRR_NSEC` (NSEC parsing, type bitmap encode/decode), `DNSRR_NSEC3` (NSEC3 parsing, hash computation). These register themselves into the handler registry on module load.
+- **`dnssec_key_loader.ts`** — Loads private keys from ISC/BIND keygen file format: RSA (JWK), ECDSA P-256/P-384 (PKCS#8 DER), Ed25519/Ed448 (PKCS#8 DER).
 
 ### Key Design Patterns
 
 - **Binary data**: All wire format uses `Uint8Array` (not JS strings)
-- **Crypto**: Node.js `crypto` module (no external crypto libs). Algorithm mapping: DNSSEC algo 5/7→sha1, 8→sha256, 10→sha512
-- **Handler registry**: `dns_zone.ts` provides `register_rr_handler()`, `dnssec_rr.ts` registers DNSKEY/RRSIG/DS handlers at module load time. This avoids circular imports.
-- **Zone file parser**: Handles comments (`;`), continuation lines `()`, implicit labels (leading whitespace), and both explicit/implicit class formats.
+- **Crypto**: Node.js `crypto` module (no external crypto libs). Algorithm mapping: DNSSEC algo 5/7→sha1, 8→sha256, 10→sha512, 13→ECDSA P-256/sha256, 14→ECDSA P-384/sha384, 15→Ed25519, 16→Ed448
+- **Handler registry**: `dns_zone.ts` provides `register_rr_handler()`, `dnssec_rr.ts` registers DNSKEY/RRSIG/DS/NSEC/NSEC3 handlers at module load time. This avoids circular imports.
+- **Zone file parser**: Handles comments (`;`), continuation lines `()`, implicit labels (leading whitespace), `$ORIGIN`, `$TTL`, and both explicit/implicit class formats.
+- **RRSIG verification**: Uses any-valid semantics per RFC 4035 Section 5.3.3 (at least one valid RRSIG suffices).
 
 ### Conventions
 
