@@ -1,0 +1,300 @@
+// DNS Zone and Resource Record
+//
+// Ported from wide-cpp-lib/wide/dns/dns_zone.hpp / dns_zone.cpp
+
+import { WireBuilder } from './dns_wire_util';
+import { domain_name2wire } from './dns_wire';
+import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from './dns_type_table';
+
+// Type aliases
+export type ns_type = number;
+export type ns_class = number;
+
+// Handler registry for extensible RR type handling (used by dnssec_rr.ts)
+type HandlerFactory = (rr: ResourceRecord, value: string) => ResourceRecordHandler;
+const handler_registry = new Map<ns_type, HandlerFactory>();
+
+export function register_rr_handler(type: ns_type, factory: HandlerFactory): void {
+    handler_registry.set(type, factory);
+}
+
+// Abstract base class for resource record data handlers
+export abstract class ResourceRecordHandler {
+    protected _rr: ResourceRecord | null;
+
+    constructor(rr: ResourceRecord | null) {
+        this._rr = rr;
+    }
+
+    get label(): string {
+        if (!this._rr) throw new Error("No parent ResourceRecord");
+        return this._rr.label;
+    }
+
+    get ttl(): number {
+        if (!this._rr) throw new Error("No parent ResourceRecord");
+        return this._rr.ttl;
+    }
+
+    get type(): ns_type {
+        if (!this._rr) throw new Error("No parent ResourceRecord");
+        return this._rr.type;
+    }
+
+    get rrclass(): ns_class {
+        if (!this._rr) throw new Error("No parent ResourceRecord");
+        return this._rr.rrclass;
+    }
+
+    get value(): string {
+        if (!this._rr) throw new Error("No parent ResourceRecord");
+        return this._rr.value;
+    }
+
+    abstract get_wire_body(builder: WireBuilder): void;
+    abstract clone(): ResourceRecordHandler;
+}
+
+// Parse IPv4 address string to 4 bytes
+function parse_ipv4(addr: string): Uint8Array | null {
+    const m = addr.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!m) return null;
+    const bytes = [parseInt(m[1]), parseInt(m[2]), parseInt(m[3]), parseInt(m[4])];
+    if (bytes.some(b => b < 0 || b > 255)) return null;
+    return new Uint8Array(bytes);
+}
+
+// Parse IPv6 address string to 16 bytes
+function parse_ipv6(addr: string): Uint8Array | null {
+    let groups: string[];
+
+    if (addr.indexOf('::') !== -1) {
+        const [left, right] = addr.split('::');
+        const left_groups = left ? left.split(':') : [];
+        const right_groups = right ? right.split(':') : [];
+        const fill_count = 8 - left_groups.length - right_groups.length;
+        if (fill_count < 0) return null;
+        groups = [...left_groups, ...Array(fill_count).fill('0'), ...right_groups];
+    } else {
+        groups = addr.split(':');
+    }
+
+    if (groups.length !== 8) return null;
+
+    const bytes = new Uint8Array(16);
+    for (let i = 0; i < 8; i++) {
+        const v = parseInt(groups[i], 16);
+        if (isNaN(v) || v < 0 || v > 0xffff) return null;
+        bytes[i * 2] = (v >> 8) & 0xff;
+        bytes[i * 2 + 1] = v & 0xff;
+    }
+    return bytes;
+}
+
+// Resource Record
+export class ResourceRecord {
+    readonly label: string;
+    readonly ttl: number;
+    readonly rrclass: ns_class;
+    readonly type: ns_type;
+    readonly value: string;
+    private handler: ResourceRecordHandler | null = null;
+
+    constructor(label: string, ttl: number, rrclass: string | ns_class, type: string | ns_type, value: string) {
+        this.label = label;
+        this.ttl = ttl;
+        this.rrclass = typeof rrclass === 'string' ? StringToRRClass(rrclass) : rrclass;
+        this.type = typeof type === 'string' ? StringToRRType(type) : type;
+        this.value = value;
+    }
+
+    get_handler(): ResourceRecordHandler | null {
+        if (this.handler !== null) return this.handler;
+
+        const factory = handler_registry.get(this.type);
+        if (factory) {
+            this.handler = factory(this, this.value);
+        }
+        return this.handler;
+    }
+
+    // Wire format: owner_name(wire) + type(2) + class(2)
+    get_wire_header(builder: WireBuilder): void {
+        const wire_name = domain_name2wire(this.label);
+        builder.append_bytes(wire_name);
+        builder.append_uint16(this.type);
+        builder.append_uint16(this.rrclass);
+    }
+
+    // Wire format body: rdlength(2) + rdata
+    // Delegates to handler if available, otherwise builds per-type
+    get_wire_body(builder: WireBuilder): void {
+        const h = this.get_handler();
+        if (h !== null) {
+            h.get_wire_body(builder);
+            return;
+        }
+
+        switch (this.type) {
+        case 1 /*A*/:       this._wire_body_a(builder); break;
+        case 2 /*NS*/:      this._wire_body_ns(builder); break;
+        case 6 /*SOA*/:     this._wire_body_soa(builder); break;
+        case 12 /*PTR*/:    this._wire_body_ns(builder); break; // same format as NS
+        case 28 /*AAAA*/:   this._wire_body_aaaa(builder); break;
+        default: break;
+        }
+    }
+
+    private _wire_body_a(builder: WireBuilder): void {
+        const ip = parse_ipv4(this.value);
+        if (!ip) return;
+        builder.append_uint16(4);
+        builder.append_bytes(ip);
+    }
+
+    private _wire_body_ns(builder: WireBuilder): void {
+        const name = this.value.trim().split(/\s+/)[0];
+        const wire = domain_name2wire(name);
+        builder.append_uint16(wire.length);
+        builder.append_bytes(wire);
+    }
+
+    private _wire_body_soa(builder: WireBuilder): void {
+        const m = this.value.match(/^(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+        if (!m) return;
+        const mname_wire = domain_name2wire(m[1]);
+        const rname_wire = domain_name2wire(m[2]);
+        const rdlen = mname_wire.length + rname_wire.length + 4 * 5;
+        builder.append_uint16(rdlen);
+        builder.append_bytes(mname_wire);
+        builder.append_bytes(rname_wire);
+        builder.append_uint32(parseInt(m[3])); // serial
+        builder.append_uint32(parseInt(m[4])); // refresh
+        builder.append_uint32(parseInt(m[5])); // retry
+        builder.append_uint32(parseInt(m[6])); // expire
+        builder.append_uint32(parseInt(m[7])); // minimum
+    }
+
+    private _wire_body_aaaa(builder: WireBuilder): void {
+        const addr = this.value.trim().split(/\s+/)[0];
+        const ip = parse_ipv6(addr);
+        if (!ip) return;
+        builder.append_uint16(16);
+        builder.append_bytes(ip);
+    }
+
+    to_string(): string {
+        return `${this.label} ${this.ttl} ${RRClassToString(this.rrclass)} ${RRTypeToString(this.type)} ${this.value}`;
+    }
+}
+
+// Zone: collection of resource records with zone file parsing
+export class Zone {
+    protected records: Map<string, ResourceRecord[]> = new Map();
+
+    private _key(name: string, type: ns_type): string {
+        return `${name}\0${type}`;
+    }
+
+    add_rr_from_parts(label: string, ttl: number, rrclass: string, type: string, value: string): ResourceRecord {
+        const rr = new ResourceRecord(label, ttl, rrclass, type, value);
+        return this.add_rr(rr);
+    }
+
+    add_rr(rr: ResourceRecord): ResourceRecord {
+        const key = this._key(rr.label, rr.type);
+        const list = this.records.get(key);
+        if (list) {
+            list.push(rr);
+        } else {
+            this.records.set(key, [rr]);
+        }
+        return rr;
+    }
+
+    find_rr(name: string, type: ns_type): ResourceRecord | null {
+        const list = this.records.get(this._key(name, type));
+        return list && list.length > 0 ? list[0] : null;
+    }
+
+    find_rrset(name: string, type: ns_type): ResourceRecord[] {
+        return this.records.get(this._key(name, type)) || [];
+    }
+
+    // Iterate all records (for searching across types)
+    all_records(): ResourceRecord[] {
+        const result: ResourceRecord[] = [];
+        for (const list of this.records.values()) {
+            result.push(...list);
+        }
+        return result;
+    }
+
+    // Parse zone file text
+    read_string(text: string): boolean {
+        const lines = text.split('\n');
+        let continuation = '';
+        let prev_label = '';
+
+        for (let line of lines) {
+            // Strip comments
+            line = line.replace(/\s*;.*$/, '');
+
+            // Skip blank lines
+            if (/^\s*$/.test(line)) continue;
+
+            // Handle continuation with parentheses
+            if (continuation) {
+                const close_match = line.match(/^(.*)\)$/);
+                if (close_match) {
+                    continuation += ' ' + close_match[1].trim();
+                    line = continuation;
+                    continuation = '';
+                } else {
+                    continuation += ' ' + line.trim();
+                    continue;
+                }
+            } else {
+                const open_match = line.match(/^(.*)\($/);
+                if (open_match) {
+                    continuation = open_match[1].trim();
+                    continue;
+                }
+            }
+
+            // Supplement label if line starts with whitespace
+            if (/^\s+/.test(line)) {
+                line = prev_label + line;
+            }
+
+            // Try parsing with explicit class: LABEL TTL CLASS TYPE VALUE
+            let m = line.match(/^(\S+)\s+(\d+)\s+(IN)\s+(\S+)\s+(.*)$/);
+            if (m) {
+                this.add_rr_from_parts(m[1], parseInt(m[2]), m[3], m[4], m[5]);
+                prev_label = m[1];
+                continue;
+            }
+
+            // Try parsing without class: LABEL TTL TYPE VALUE
+            m = line.match(/^(\S+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+            if (m) {
+                this.add_rr_from_parts(m[1], parseInt(m[2]), 'IN', m[3], m[4]);
+                prev_label = m[1];
+                continue;
+            }
+        }
+        return true;
+    }
+
+    print(type?: ns_type): string {
+        const lines: string[] = [];
+        for (const list of this.records.values()) {
+            for (const rr of list) {
+                if (type === undefined || rr.type === type) {
+                    lines.push(rr.to_string());
+                }
+            }
+        }
+        return lines.join('\n');
+    }
+}

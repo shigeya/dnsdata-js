@@ -8,7 +8,9 @@ import {
     RRTypeToString,
     StringToRRType,
     RRClassToString,
-    StringToRRClass
+    StringToRRClass,
+    QTypeValidForRequest,
+    QClassValidForRequest
 } from "../../src/lib/dns_type_table";
 
 //
@@ -158,7 +160,7 @@ describe("RRClassToString", () => {
     });
 });
 
-describe("RRClassToString", () => {
+describe("StringToRRClass", () => {
     it("can translate between qclass and printable string", () => {
         rrclass_test_vector.forEach(async ([rrclass, printable]) => {
             expect(StringToRRClass(printable)).toBe(rrclass);
@@ -166,5 +168,33 @@ describe("RRClassToString", () => {
     });
     it("can detect illegal qclass string", () => {
         expect( () => { StringToRRClass("XXX") } ).toThrow(RangeError);
+    });
+});
+
+//
+
+describe("QTypeValidForRequest", () => {
+    it("returns true for valid query types", () => {
+        [1, 2, 5, 6, 12, 16, 28, 33, 35, 43, 46, 47, 48, 50, 256].forEach(t => {
+            expect(QTypeValidForRequest(t)).toBe(true);
+        });
+    });
+    it("returns false for invalid/unknown types", () => {
+        [0, 999, 3, 4].forEach(t => {
+            expect(QTypeValidForRequest(t)).toBe(false);
+        });
+    });
+});
+
+describe("QClassValidForRequest", () => {
+    it("returns true for valid query classes", () => {
+        [1, 3, 4, 255].forEach(c => {
+            expect(QClassValidForRequest(c)).toBe(true);
+        });
+    });
+    it("returns false for invalid query classes", () => {
+        [0, 254, 999].forEach(c => {
+            expect(QClassValidForRequest(c)).toBe(false);
+        });
     });
 });

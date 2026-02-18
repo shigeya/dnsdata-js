@@ -310,16 +310,40 @@ export function StringToRRClass(str: string) : ns_class
         throw new RangeError();
     }
 }
-// const String2QType_Map = {
-//     "INVALID": 0,
-//     "A": 1,
-    
-// };
+export function QTypeValidForRequest(type: ns_type): boolean {
+    switch (type) {
+    case 0 /*ns_t_invalid*/: return false;
+    case 1 /*ns_t_a*/:
+    case 2 /*ns_t_ns*/:
+    case 5 /*ns_t_cname*/:
+    case 6 /*ns_t_soa*/:
+    case 12 /*ns_t_ptr*/:
+    case 15 /*ns_t_mx*/:
+    case 16 /*ns_t_txt*/:
+    case 28 /*ns_t_aaaa*/:
+    case 33 /*ns_t_srv*/:
+    case 35 /*ns_t_naptr*/:
+    case 43 /*ns_t_ds*/:
+    case 46 /*ns_t_rrsig*/:
+    case 47 /*ns_t_nsec*/:
+    case 48 /*ns_t_dnskey*/:
+    case 50 /*ns_t_nsec3*/:
+    case 256 /*ns_t_uri*/:
+        return true;
+    default:
+        return false;
+    }
+}
 
-// export function String_toQType(str: string) : ns_type
-// {
-//     if (!String2QType_Map[str]) {
-//         return String2QType_Map[str];
-//     }
-//     return 0;
-// }
+export function QClassValidForRequest(klass: ns_class): boolean {
+    switch (klass) {
+    case 0 /*ns_c_invalid*/: return false;
+    case 1 /*ns_c_in*/:     return true;
+    case 3 /*ns_c_chaos*/:  return true;
+    case 4 /*ns_c_hs*/:     return true;
+    case 254 /*ns_c_none*/: return false;
+    case 255 /*ns_c_any*/:  return true;
+    default:
+        return false;
+    }
+}
