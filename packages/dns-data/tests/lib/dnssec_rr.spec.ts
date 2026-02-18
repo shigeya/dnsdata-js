@@ -1,6 +1,6 @@
 // DNSSEC Resource Record tests
 
-import { DNSKey, RRSig, DNSRR_DS } from "../../src/lib/dnssec_rr";
+import { DNSKey, RRSig, DNSRR_DS, DNSRR_NSEC, DNSRR_NSEC3 } from "../../src/lib/dnssec_rr";
 import { ResourceRecord } from "../../src/lib/dns_zone";
 import { WireBuilder } from "../../src/lib/dns_wire_util";
 
@@ -238,6 +238,70 @@ describe("DNSKey Ed25519 (algorithm 15)", () => {
         const signature = dnskey.sign(test_data);
         expect(signature.length).toBe(64); // Ed25519 signature is 64 bytes
         expect(dnskey.verify(test_data, signature)).toBe(true);
+    });
+});
+
+describe("DNSRR_NSEC", () => {
+    it("can parse NSEC presentation format", () => {
+        const nsec = new DNSRR_NSEC(null as any, "host.example.com. A MX RRSIG NSEC");
+        expect(nsec.next_domain).toBe("host.example.com.");
+        expect(nsec.covers_type(1)).toBe(true);   // A
+        expect(nsec.covers_type(15)).toBe(true);   // MX
+        expect(nsec.covers_type(46)).toBe(true);   // RRSIG
+        expect(nsec.covers_type(47)).toBe(true);   // NSEC
+        expect(nsec.covers_type(28)).toBe(false);  // AAAA not covered
+    });
+
+    it("encodes and decodes type bitmap correctly", () => {
+        const types = [1, 15, 46, 47]; // A, MX, RRSIG, NSEC
+        const bitmap = DNSRR_NSEC.encode_type_bitmap(types);
+        const decoded = DNSRR_NSEC.decode_type_bitmap(bitmap);
+        expect(decoded).toEqual(types);
+    });
+
+    it("builds wire body correctly", () => {
+        const nsec = new DNSRR_NSEC(null as any, "b.example.com. A NS SOA");
+        const wb = new WireBuilder();
+        nsec.get_wire_body(wb);
+        const result = wb.build();
+        // Should start with rdlength
+        const rdlen = (result[0] << 8) | result[1];
+        expect(rdlen).toBe(result.length - 2);
+    });
+});
+
+describe("DNSRR_NSEC3", () => {
+    it("can parse NSEC3 presentation format", () => {
+        const nsec3 = new DNSRR_NSEC3(null as any, "1 0 10 AABB 2T7B4G4VSA5SMI47K61MV5BV1A22BOJR A RRSIG");
+        expect(nsec3.hash_algorithm).toBe(1);
+        expect(nsec3.flags).toBe(0);
+        expect(nsec3.iterations).toBe(10);
+        expect(nsec3.salt.length).toBe(2);
+        expect(nsec3.salt[0]).toBe(0xaa);
+        expect(nsec3.salt[1]).toBe(0xbb);
+        expect(nsec3.covers_type(1)).toBe(true);   // A
+        expect(nsec3.covers_type(46)).toBe(true);   // RRSIG
+    });
+
+    it("handles empty salt", () => {
+        const nsec3 = new DNSRR_NSEC3(null as any, "1 0 0 - 2T7B4G4VSA5SMI47K61MV5BV1A22BOJR A");
+        expect(nsec3.salt.length).toBe(0);
+        expect(nsec3.iterations).toBe(0);
+    });
+
+    it("computes NSEC3 hash", () => {
+        // Test with known values: SHA-1 hash of "example" with no iterations and empty salt
+        const hash = DNSRR_NSEC3.compute_hash("example.", 1, 0, new Uint8Array(0));
+        expect(hash.length).toBe(20); // SHA-1 produces 20 bytes
+    });
+
+    it("builds wire body correctly", () => {
+        const nsec3 = new DNSRR_NSEC3(null as any, "1 0 10 AABB 2T7B4G4VSA5SMI47K61MV5BV1A22BOJR A NS");
+        const wb = new WireBuilder();
+        nsec3.get_wire_body(wb);
+        const result = wb.build();
+        const rdlen = (result[0] << 8) | result[1];
+        expect(rdlen).toBe(result.length - 2);
     });
 });
 

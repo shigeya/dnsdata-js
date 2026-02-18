@@ -452,7 +452,209 @@ export class DNSRR_DS extends ResourceRecordHandler {
     }
 }
 
+//////////////////////////////////////////////////////////// NSEC
+
+export class DNSRR_NSEC extends ResourceRecordHandler {
+    readonly next_domain: string;
+    readonly type_bitmap: Uint8Array;
+    readonly covered_types: number[];
+
+    constructor(rr: ResourceRecord | null, value: string) {
+        super(rr);
+        // Parse: "{next_domain} {type1} [type2] ..."
+        const parts = value.trim().split(/\s+/);
+        if (parts.length < 2) throw new DNSZonePresentationFormatError("NSEC: Presentation format error: " + value);
+
+        this.next_domain = parts[0];
+        this.covered_types = [];
+        for (let i = 1; i < parts.length; i++) {
+            try {
+                this.covered_types.push(StringToRRType(parts[i]));
+            } catch (_) {
+                // Ignore unknown types
+            }
+        }
+        this.covered_types.sort((a, b) => a - b);
+        this.type_bitmap = DNSRR_NSEC.encode_type_bitmap(this.covered_types);
+    }
+
+    // Encode type bitmap per RFC 4034 Section 4.1.2
+    static encode_type_bitmap(types: number[]): Uint8Array {
+        if (types.length === 0) return new Uint8Array(0);
+
+        // Group by window (high byte)
+        const windows = new Map<number, number[]>();
+        for (const t of types) {
+            const window = (t >> 8) & 0xff;
+            const offset = t & 0xff;
+            if (!windows.has(window)) windows.set(window, []);
+            windows.get(window)!.push(offset);
+        }
+
+        const parts: Uint8Array[] = [];
+        for (const [window, offsets] of Array.from(windows.entries()).sort((a, b) => a[0] - b[0])) {
+            const max_offset = Math.max(...offsets);
+            const bitmap_len = Math.floor(max_offset / 8) + 1;
+            const bitmap = new Uint8Array(bitmap_len);
+            for (const off of offsets) {
+                bitmap[Math.floor(off / 8)] |= (0x80 >> (off % 8));
+            }
+            // window(1) + bitmap_length(1) + bitmap
+            const entry = new Uint8Array(2 + bitmap_len);
+            entry[0] = window;
+            entry[1] = bitmap_len;
+            entry.set(bitmap, 2);
+            parts.push(entry);
+        }
+
+        const total = parts.reduce((sum, p) => sum + p.length, 0);
+        const result = new Uint8Array(total);
+        let pos = 0;
+        for (const p of parts) {
+            result.set(p, pos);
+            pos += p.length;
+        }
+        return result;
+    }
+
+    // Decode type bitmap per RFC 4034 Section 4.1.2
+    static decode_type_bitmap(bitmap: Uint8Array): number[] {
+        const types: number[] = [];
+        let pos = 0;
+        while (pos < bitmap.length) {
+            const window = bitmap[pos++];
+            const len = bitmap[pos++];
+            for (let i = 0; i < len; i++) {
+                const byte = bitmap[pos + i];
+                for (let bit = 0; bit < 8; bit++) {
+                    if (byte & (0x80 >> bit)) {
+                        types.push((window << 8) | (i * 8 + bit));
+                    }
+                }
+            }
+            pos += len;
+        }
+        return types;
+    }
+
+    covers_type(type: number): boolean {
+        return this.covered_types.indexOf(type) !== -1;
+    }
+
+    get_wire_body(builder: WireBuilder): void {
+        const next_wire = domain_name2wire(this.next_domain);
+        builder.append_uint16(next_wire.length + this.type_bitmap.length);
+        builder.append_bytes(next_wire);
+        builder.append_bytes(this.type_bitmap);
+    }
+
+    clone(): DNSRR_NSEC {
+        return new DNSRR_NSEC(this._rr, this.value);
+    }
+}
+
+//////////////////////////////////////////////////////////// NSEC3
+
+export class DNSRR_NSEC3 extends ResourceRecordHandler {
+    readonly hash_algorithm: number;
+    readonly flags: number;
+    readonly iterations: number;
+    readonly salt: Uint8Array;
+    readonly next_hashed_owner: Uint8Array;
+    readonly type_bitmap: Uint8Array;
+    readonly covered_types: number[];
+
+    constructor(rr: ResourceRecord | null, value: string) {
+        super(rr);
+        // Parse: "{hash_algo} {flags} {iterations} {salt} {next_hashed_owner} {type1} [type2] ..."
+        const parts = value.trim().split(/\s+/);
+        if (parts.length < 5) throw new DNSZonePresentationFormatError("NSEC3: Presentation format error: " + value);
+
+        this.hash_algorithm = parseInt(parts[0]);
+        this.flags = parseInt(parts[1]);
+        this.iterations = parseInt(parts[2]);
+        this.salt = parts[3] === '-' ? new Uint8Array(0) : new Uint8Array(Buffer.from(parts[3], 'hex'));
+        this.next_hashed_owner = base32hex_decode(parts[4]);
+
+        this.covered_types = [];
+        for (let i = 5; i < parts.length; i++) {
+            try {
+                this.covered_types.push(StringToRRType(parts[i]));
+            } catch (_) {
+                // Ignore unknown types
+            }
+        }
+        this.covered_types.sort((a, b) => a - b);
+        this.type_bitmap = DNSRR_NSEC.encode_type_bitmap(this.covered_types);
+    }
+
+    covers_type(type: number): boolean {
+        return this.covered_types.indexOf(type) !== -1;
+    }
+
+    // Compute NSEC3 hash per RFC 5155 Section 5
+    static compute_hash(name: string, algorithm: number, iterations: number, salt: Uint8Array): Uint8Array {
+        if (algorithm !== 1) throw new Error(`Unsupported NSEC3 hash algorithm: ${algorithm}`);
+        const name_wire = domain_name2wire(name.toLowerCase());
+
+        let digest = crypto.createHash('sha1')
+            .update(Buffer.from(name_wire))
+            .update(Buffer.from(salt))
+            .digest();
+
+        for (let i = 0; i < iterations; i++) {
+            digest = crypto.createHash('sha1')
+                .update(digest)
+                .update(Buffer.from(salt))
+                .digest();
+        }
+        return new Uint8Array(digest);
+    }
+
+    get_wire_body(builder: WireBuilder): void {
+        const rdlen = 6 + this.salt.length + this.next_hashed_owner.length + this.type_bitmap.length;
+        builder.append_uint16(rdlen);
+        builder.append_uint8(this.hash_algorithm);
+        builder.append_uint8(this.flags);
+        builder.append_uint16(this.iterations);
+        builder.append_uint8(this.salt.length);
+        builder.append_bytes(this.salt);
+        builder.append_uint8(this.next_hashed_owner.length);
+        builder.append_bytes(this.next_hashed_owner);
+        builder.append_bytes(this.type_bitmap);
+    }
+
+    clone(): DNSRR_NSEC3 {
+        return new DNSRR_NSEC3(this._rr, this.value);
+    }
+}
+
+// Base32hex decode (RFC 4648, used by NSEC3)
+function base32hex_decode(input: string): Uint8Array {
+    const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUV';
+    const cleaned = input.toUpperCase().replace(/=+$/, '');
+    const bits: number[] = [];
+    for (const c of cleaned) {
+        const val = alphabet.indexOf(c);
+        if (val === -1) throw new Error(`Invalid base32hex character: ${c}`);
+        for (let i = 4; i >= 0; i--) {
+            bits.push((val >> i) & 1);
+        }
+    }
+    const bytes = new Uint8Array(Math.floor(bits.length / 8));
+    for (let i = 0; i < bytes.length; i++) {
+        let byte = 0;
+        for (let bit = 0; bit < 8; bit++) {
+            byte = (byte << 1) | bits[i * 8 + bit];
+        }
+        bytes[i] = byte;
+    }
+    return bytes;
+}
+
 // Register handlers so that ResourceRecord.get_handler() can create them
 register_rr_handler(StringToRRType('DNSKEY'), (rr, value) => new DNSKey(rr, value));
 register_rr_handler(StringToRRType('RRSIG'), (rr, value) => new RRSig(rr, value));
 register_rr_handler(StringToRRType('DS'), (rr, value) => new DNSRR_DS(rr, value));
+register_rr_handler(StringToRRType('NSEC'), (rr, value) => new DNSRR_NSEC(rr, value));
+register_rr_handler(StringToRRType('NSEC3'), (rr, value) => new DNSRR_NSEC3(rr, value));
