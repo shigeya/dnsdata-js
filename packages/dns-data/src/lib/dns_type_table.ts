@@ -103,7 +103,7 @@ export function RRTypeToString(type: ns_type)
 //     case 10 /*ns_t_null*/:     return "NULL";          // Null resource record.
 //     case 11 /*ns_t_wks*/:      return "WKS";           // Well known service.
      case 12 /*ns_t_ptr*/:      return "PTR";           // Domain name pointer.
-//     case 13 /*ns_t_hinfo*/:    return "HINFO";         // Host information.
+     case 13 /*ns_t_hinfo*/:    return "HINFO";         // Host information (RFC 1035 §3.3.2).
 //     case 14 /*ns_t_minfo*/:    return "MINFO";         // Mailbox information.
     case 15 /*ns_t_mx*/:       return "MX";            // Mail routing information.
     case 16 /*ns_t_txt*/:      return "TXT";           // Text strings.
@@ -198,7 +198,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 10 /*ns_t_null*/:     return "NULL";          // Null resource record.
 //     case 11 /*ns_t_wks*/:      return "WKS";           // Well known service.
      case "PTR" /*ns_t_ptr*/:      return 12;           // Domain name pointer.
-//     case 13 /*ns_t_hinfo*/:    return "HINFO";         // Host information.
+     case "HINFO" /*ns_t_hinfo*/:  return 13;           // Host information (RFC 1035 §3.3.2).
 //     case 14 /*ns_t_minfo*/:    return "MINFO";         // Mailbox information.
     case "MX" /*ns_t_mx*/:        return 15;           // Mail routing information.
     case "TXT" /*ns_t_txt*/:      return 16;           // Text strings.
@@ -314,6 +314,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 5 /*ns_t_cname*/:
     case 6 /*ns_t_soa*/:
     case 12 /*ns_t_ptr*/:
+    case 13 /*ns_t_hinfo*/:
     case 15 /*ns_t_mx*/:
     case 16 /*ns_t_txt*/:
     case 28 /*ns_t_aaaa*/:

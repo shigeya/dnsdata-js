@@ -10,6 +10,7 @@ import './dane_rr'; // Register TLSA/SMIMEA handlers
 import './sshfp_rr'; // Register SSHFP handler
 import './svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
 import './eui_rr'; // Register EUI48/EUI64 handlers (RFC 7043)
+import './hinfo_rr'; // Register HINFO handler (RFC 1035 §3.3.2)
 
 export enum KeyVerifyMode {
     None = 0,
