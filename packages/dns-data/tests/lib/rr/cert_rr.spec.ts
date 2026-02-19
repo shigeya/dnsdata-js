@@ -1,7 +1,7 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
-import { DNSRR_CERT } from '../../src/lib/cert_rr';
-import { StringToRRType, RRTypeToString } from '../../src/lib/dns_type_table';
-import { WireBuilder } from '../../src/lib/dns_wire_util';
+import { ResourceRecord } from '../../../src/lib/dns_zone';
+import { DNSRR_CERT } from '../../../src/lib/rr/cert_rr';
+import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table CERT', () => {
     it('should convert CERT type', () => {
@@ -76,7 +76,7 @@ describe('DNSRR_CERT (RFC 4398)', () => {
 
 describe('Zone file parsing with CERT records', () => {
     it('should parse CERT records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         const b64 = Buffer.from([0x01, 0x02, 0x03]).toString('base64');
         zone.read_string(`

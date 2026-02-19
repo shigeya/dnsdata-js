@@ -10,11 +10,11 @@
 // RFC 9460 §2.4.3: HTTPS RR is a SVCB-compatible type with identical wire format.
 // HTTPS (type 65) uses the same RDATA encoding as SVCB (type 64).
 
-import { WireBuilder } from './dns_wire_util';
-import { domain_name2wire } from './dns_wire';
-import { StringToRRType } from './dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
-import { DNSZonePresentationFormatError } from './dns_exception';
+import { WireBuilder } from '../dns_wire_util';
+import { domain_name2wire } from '../dns_wire';
+import { StringToRRType } from '../dns_type_table';
+import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { DNSZonePresentationFormatError } from '../dns_exception';
 
 // RFC 9460 §14.3.2: Initial SvcParamKey registry
 const SVCPARAM_KEY_MAP: Record<string, number> = {

@@ -13,13 +13,13 @@
 // Presentation format: SOA_serial flags type-list
 //   e.g.  66 3 A NS AAAA
 
-import { WireBuilder } from './dns_wire_util';
-import { StringToRRType } from './dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
+import { WireBuilder } from '../dns_wire_util';
+import { StringToRRType } from '../dns_type_table';
+import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 // RFC 7477 §2: Type Bit Map uses same encoding as NSEC (RFC 4034 §4.1.2).
 // Reuse DNSRR_NSEC.encode_type_bitmap() for bitmap encoding.
-import { DNSRR_NSEC } from './dnssec_rr';
-import { DNSZonePresentationFormatError } from './dns_exception';
+import { DNSRR_NSEC } from '../dnssec_rr';
+import { DNSZonePresentationFormatError } from '../dns_exception';
 
 export class DNSRR_CSYNC extends ResourceRecordHandler {
     readonly soa_serial: number;

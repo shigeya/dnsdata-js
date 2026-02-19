@@ -16,10 +16,10 @@
 // Presentation format (RFC 1876 §3):
 //   d1 [m1 [s1.frac]] {N|S} d2 [m2 [s2.frac]] {E|W} alt["m"] [siz["m"] [hp["m"] [vp["m"]]]]
 
-import { WireBuilder } from './dns_wire_util';
-import { StringToRRType } from './dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
-import { DNSZonePresentationFormatError } from './dns_exception';
+import { WireBuilder } from '../dns_wire_util';
+import { StringToRRType } from '../dns_type_table';
+import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { DNSZonePresentationFormatError } from '../dns_exception';
 
 const EQUATOR = 2147483648;  // 2^31
 const ALT_OFFSET = 10000000; // 100,000m in centimeters

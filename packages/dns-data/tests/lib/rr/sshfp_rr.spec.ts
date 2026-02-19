@@ -1,7 +1,7 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
-import { DNSRR_SSHFP } from '../../src/lib/sshfp_rr';
-import { StringToRRType, RRTypeToString } from '../../src/lib/dns_type_table';
-import { WireBuilder } from '../../src/lib/dns_wire_util';
+import { ResourceRecord } from '../../../src/lib/dns_zone';
+import { DNSRR_SSHFP } from '../../../src/lib/rr/sshfp_rr';
+import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table SSHFP', () => {
     it('should convert SSHFP type', () => {
@@ -81,7 +81,7 @@ describe('DNSRR_SSHFP', () => {
 
 describe('Zone file parsing with SSHFP records', () => {
     it('should parse SSHFP records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

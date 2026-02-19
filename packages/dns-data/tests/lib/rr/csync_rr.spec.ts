@@ -1,7 +1,7 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
-import { DNSRR_CSYNC } from '../../src/lib/csync_rr';
-import { StringToRRType, RRTypeToString } from '../../src/lib/dns_type_table';
-import { WireBuilder } from '../../src/lib/dns_wire_util';
+import { ResourceRecord } from '../../../src/lib/dns_zone';
+import { DNSRR_CSYNC } from '../../../src/lib/rr/csync_rr';
+import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table CSYNC', () => {
     it('should convert CSYNC type', () => {
@@ -90,7 +90,7 @@ describe('DNSRR_CSYNC (RFC 7477)', () => {
 
 describe('Zone file parsing with CSYNC records', () => {
     it('should parse CSYNC records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

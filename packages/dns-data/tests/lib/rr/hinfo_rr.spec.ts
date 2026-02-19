@@ -1,7 +1,7 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
-import { DNSRR_HINFO } from '../../src/lib/hinfo_rr';
-import { StringToRRType, RRTypeToString } from '../../src/lib/dns_type_table';
-import { WireBuilder } from '../../src/lib/dns_wire_util';
+import { ResourceRecord } from '../../../src/lib/dns_zone';
+import { DNSRR_HINFO } from '../../../src/lib/rr/hinfo_rr';
+import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table HINFO', () => {
     it('should convert HINFO type', () => {
@@ -65,7 +65,7 @@ describe('DNSRR_HINFO (RFC 1035 §3.3.2)', () => {
 
 describe('Zone file parsing with HINFO records', () => {
     it('should parse HINFO records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

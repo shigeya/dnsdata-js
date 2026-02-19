@@ -1,7 +1,7 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
-import { DNSRR_EUI } from '../../src/lib/eui_rr';
-import { StringToRRType, RRTypeToString } from '../../src/lib/dns_type_table';
-import { WireBuilder } from '../../src/lib/dns_wire_util';
+import { ResourceRecord } from '../../../src/lib/dns_zone';
+import { DNSRR_EUI } from '../../../src/lib/rr/eui_rr';
+import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table EUI48/EUI64', () => {
     it('should convert EUI48 type', () => {
@@ -106,7 +106,7 @@ describe('EUI64 (RFC 7043 §4)', () => {
 
 describe('Zone file parsing with EUI48/EUI64 records', () => {
     it('should parse EUI48 records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.
@@ -120,7 +120,7 @@ host  IN  EUI48  00-00-5e-00-53-2a
     });
 
     it('should parse EUI64 records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

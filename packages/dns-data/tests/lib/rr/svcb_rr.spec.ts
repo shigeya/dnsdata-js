@@ -1,7 +1,7 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
-import { DNSRR_SVCB } from '../../src/lib/svcb_rr';
-import { StringToRRType, RRTypeToString } from '../../src/lib/dns_type_table';
-import { WireBuilder } from '../../src/lib/dns_wire_util';
+import { ResourceRecord } from '../../../src/lib/dns_zone';
+import { DNSRR_SVCB } from '../../../src/lib/rr/svcb_rr';
+import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table SVCB/HTTPS', () => {
     it('should convert SVCB type', () => {
@@ -203,7 +203,7 @@ describe('HTTPS RR (type 65)', () => {
 
 describe('Zone file parsing with SVCB/HTTPS records', () => {
     it('should parse SVCB records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.
@@ -218,7 +218,7 @@ _https._tcp  IN  SVCB  1 svc.example.com. alpn=h2
     });
 
     it('should parse HTTPS records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

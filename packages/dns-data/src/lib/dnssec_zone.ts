@@ -6,16 +6,16 @@ import { WireBuilder, compare_uint8arrays } from './dns_wire_util';
 import { StringToRRType, RRTypeToString } from './dns_type_table';
 import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
-import './dane_rr'; // Register TLSA/SMIMEA handlers
-import './sshfp_rr'; // Register SSHFP handler
-import './svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
-import './eui_rr'; // Register EUI48/EUI64 handlers (RFC 7043)
-import './hinfo_rr'; // Register HINFO handler (RFC 1035 §3.3.2)
-import './rp_rr'; // Register RP handler (RFC 1183 §2.2)
-import './openpgpkey_rr'; // Register OPENPGPKEY handler (RFC 7929)
-import './cert_rr'; // Register CERT handler (RFC 4398)
-import './loc_rr'; // Register LOC handler (RFC 1876)
-import './csync_rr'; // Register CSYNC handler (RFC 7477)
+import './rr/dane_rr'; // Register TLSA/SMIMEA handlers
+import './rr/sshfp_rr'; // Register SSHFP handler
+import './rr/svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
+import './rr/eui_rr'; // Register EUI48/EUI64 handlers (RFC 7043)
+import './rr/hinfo_rr'; // Register HINFO handler (RFC 1035 §3.3.2)
+import './rr/rp_rr'; // Register RP handler (RFC 1183 §2.2)
+import './rr/openpgpkey_rr'; // Register OPENPGPKEY handler (RFC 7929)
+import './rr/cert_rr'; // Register CERT handler (RFC 4398)
+import './rr/loc_rr'; // Register LOC handler (RFC 1876)
+import './rr/csync_rr'; // Register CSYNC handler (RFC 7477)
 
 export enum KeyVerifyMode {
     None = 0,

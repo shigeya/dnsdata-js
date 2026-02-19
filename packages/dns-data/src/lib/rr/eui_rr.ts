@@ -9,10 +9,10 @@
 // Presentation format (RFC 7043 §3.3 / §4.3):
 //   Hex digits separated by hyphens: e.g. "00-00-5e-00-53-2a"
 
-import { WireBuilder } from './dns_wire_util';
-import { StringToRRType } from './dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
-import { DNSZonePresentationFormatError } from './dns_exception';
+import { WireBuilder } from '../dns_wire_util';
+import { StringToRRType } from '../dns_type_table';
+import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { DNSZonePresentationFormatError } from '../dns_exception';
 
 // RFC 7043 §3/§4: EUI48 and EUI64 share the same structure (fixed-length address).
 // This class handles both; only the expected byte length differs.
