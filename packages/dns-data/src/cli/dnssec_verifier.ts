@@ -125,8 +125,8 @@ function loadRootAnchorsToZone(zone: DNSSecZone, details: string[]): RootAnchorD
         details.push(`[.] Warning: Using external root anchors from ~/.dnsjs/root-anchors.json (last updated: ${anchors.lastUpdated}, source: ${anchors.source})`);
     }
 
-    const keyTags = anchors.ds.map(ds => ds.keyTag).join(', ');
-    details.push(`[.] Root trust anchor loaded (keytag=${keyTags})`);
+    const keyTagInfo = anchors.ds.map(ds => `${ds.keyTag}/${algoName(ds.algorithm)}`).join(', ');
+    details.push(`[.] Root trust anchor loaded (keytag=${keyTagInfo})`);
 
     // Add DS records for root KSKs to zone
     // These are stored under '.' name with the child zone being '.' itself
@@ -139,7 +139,8 @@ function loadRootAnchorsToZone(zone: DNSSecZone, details: string[]): RootAnchorD
 }
 
 // Verify that a zone's KSK matches at least one DS record (any-valid)
-function verifyKSKMatchesDS(zone: DNSSecZone, zoneName: string, dnskeyType: number, dsType: number): boolean {
+// Returns the matched KSK or null
+function verifyKSKMatchesDS(zone: DNSSecZone, zoneName: string, dnskeyType: number, dsType: number): DNSKey | null {
     const dsRRs = zone.find_rrset(zoneName, dsType);
     const dnskeyRRs = zone.find_rrset(zoneName, dnskeyType);
 
@@ -151,14 +152,14 @@ function verifyKSKMatchesDS(zone: DNSSecZone, zoneName: string, dnskeyType: numb
         for (const dsRR of dsRRs) {
             const dsHandler = dsRR.get_handler();
             if (dsHandler instanceof DNSRR_DS && dsHandler.verify_digest(keyDigest)) {
-                return true;
+                return handler;
             }
         }
     }
-    return false;
+    return null;
 }
 
-// Fetch DS for a child zone; returns keytags string if DS found, null if absent
+// Fetch DS for a child zone; returns description string if DS found, null if absent
 async function fetchDS(
     doh: DoHResolver, zone: DNSSecZone, childZone: string, dsType: number,
 ): Promise<string | null> {
@@ -166,18 +167,23 @@ async function fetchDS(
     const dsAnswers = dsResp.answers.filter(a => a.type === dsType);
     if (dsAnswers.length === 0) return null;
     addDoHResponseToZone(zone, dsResp);
-    return dsAnswers.map(r => r.data.split(/\s+/)[0]).join(', ');
+    // DS data: "{keytag} {algorithm} {digesttype} {hexdigest}"
+    return dsAnswers.map(r => {
+        const parts = r.data.split(/\s+/);
+        return `${parts[0]}/${algoName(parseInt(parts[1]))}`;
+    }).join(', ');
 }
 
 // Verify DNSKEY RRset for a non-root zone (KSK matches DS + DNSKEY RRSIG)
 function verifyChildDNSKEY(
     zone: DNSSecZone, zoneName: string, dnskeyType: number, dsType: number, details: string[],
 ): boolean {
-    if (!verifyKSKMatchesDS(zone, zoneName, dnskeyType, dsType)) {
+    const matchedKSK = verifyKSKMatchesDS(zone, zoneName, dnskeyType, dsType);
+    if (!matchedKSK) {
         details.push(`[${zoneName}] KSK matches DS -> FAILED`);
         return false;
     }
-    details.push(`[${zoneName}] KSK matches DS -> VALID`);
+    details.push(`[${zoneName}] KSK matches DS -> VALID (keytag=${matchedKSK.key_tag}/${algoName(matchedKSK.algorithm)})`);
 
     zone.add_sep(zoneName);
     if (!zone.verify_rrset(zoneName, dnskeyType, KeyVerifyMode.KSK)) {
@@ -326,12 +332,14 @@ export async function verifyDNSSECChain(
     const targetZone = hierarchy[parentIdx];
     const rrsetValid = zone.verify_rrset(name, rrtype);
     const typeStr = RRTypeToString(rrtype);
+    const targetRrsigs = zone.find_rrsigs(name, rrtype);
+    const rrsigAlgo = targetRrsigs.length > 0 ? ` (${algoName(targetRrsigs[0].algorithm)})` : '';
     if (rrsetValid) {
-        details.push(`[${targetZone}] ${typeStr} RRSIG -> VALID`);
+        details.push(`[${targetZone}] ${typeStr} RRSIG -> VALID${rrsigAlgo}`);
         details.push(`Result: SECURE (full chain verified to root)`);
         return { verified: true, details };
     } else {
-        details.push(`[${targetZone}] ${typeStr} RRSIG -> FAILED`);
+        details.push(`[${targetZone}] ${typeStr} RRSIG -> FAILED${rrsigAlgo}`);
         return { verified: false, details };
     }
 }
