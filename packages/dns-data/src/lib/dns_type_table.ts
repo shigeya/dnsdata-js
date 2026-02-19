@@ -107,7 +107,7 @@ export function RRTypeToString(type: ns_type)
 //     case 14 /*ns_t_minfo*/:    return "MINFO";         // Mailbox information.
     case 15 /*ns_t_mx*/:       return "MX";            // Mail routing information.
     case 16 /*ns_t_txt*/:      return "TXT";           // Text strings.
-//     case 17 /*ns_t_rp*/:       return "RP";            // Responsible person.
+    case 17 /*ns_t_rp*/:       return "RP";            // Responsible person (RFC 1183 §2.2).
 //     case 18 /*ns_t_afsdb*/:    return "AFSDB";         // AFS cell database.
 //     case 19 /*ns_t_x25*/:      return "X25";           // X_25 calling address.
 //     case 20 /*ns_t_isdn*/:     return "ISDN";          // ISDN calling address.
@@ -202,7 +202,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 14 /*ns_t_minfo*/:    return "MINFO";         // Mailbox information.
     case "MX" /*ns_t_mx*/:        return 15;           // Mail routing information.
     case "TXT" /*ns_t_txt*/:      return 16;           // Text strings.
-//     case 17 /*ns_t_rp*/:       return "RP";            // Responsible person.
+    case "RP" /*ns_t_rp*/:        return 17;           // Responsible person (RFC 1183 §2.2).
 //     case 18 /*ns_t_afsdb*/:    return "AFSDB";         // AFS cell database.
 //     case 19 /*ns_t_x25*/:      return "X25";           // X_25 calling address.
 //     case 20 /*ns_t_isdn*/:     return "ISDN";          // ISDN calling address.
@@ -317,6 +317,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 13 /*ns_t_hinfo*/:
     case 15 /*ns_t_mx*/:
     case 16 /*ns_t_txt*/:
+    case 17 /*ns_t_rp*/:
     case 28 /*ns_t_aaaa*/:
     case 33 /*ns_t_srv*/:
     case 35 /*ns_t_naptr*/:
