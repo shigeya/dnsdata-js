@@ -9,6 +9,7 @@ import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import './dane_rr'; // Register TLSA/SMIMEA handlers
 import './sshfp_rr'; // Register SSHFP handler
 import './svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
+import './eui_rr'; // Register EUI48/EUI64 handlers (RFC 7043)
 
 export enum KeyVerifyMode {
     None = 0,

@@ -161,8 +161,8 @@ export function RRTypeToString(type: ns_type)
 //     case 105 /*ns_t_l32*/:	return "L32";
 //     case 106 /*ns_t_l64*/:	return "L64";
 //     case 107 /*ns_t_lp*/:	return "LP";
-//     case 108 /*ns_t_eui48*/:	return "EUI48";
-//     case 109 /*ns_t_eui64*/:	return "EUI64";
+    case 108 /*ns_t_eui48*/:	return "EUI48";         // EUI-48 address (RFC 7043)
+    case 109 /*ns_t_eui64*/:	return "EUI64";         // EUI-64 address (RFC 7043)
 
 //     case 249 /*ns_t_tkey*/:	return "TKEY";
 //     case 250 /*ns_t_tsig*/:	return "TSIG";
@@ -254,8 +254,8 @@ export function StringToRRType(str: string) : ns_type
 //     case 105 /*ns_t_l32*/:	return "L32";
 //     case 106 /*ns_t_l64*/:	return "L64";
 //     case 107 /*ns_t_lp*/:	return "LP";
-//     case 108 /*ns_t_eui48*/:	return "EUI48";
-//     case 109 /*ns_t_eui64*/:	return "EUI64";
+    case "EUI48" /*ns_t_eui48*/:	return 108;         // EUI-48 address (RFC 7043)
+    case "EUI64" /*ns_t_eui64*/:	return 109;         // EUI-64 address (RFC 7043)
 
 //     case 249 /*ns_t_tkey*/:	return "TKEY";
 //     case 250 /*ns_t_tsig*/:	return "TSIG";
@@ -333,6 +333,8 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 60 /*ns_t_cdnskey*/:
     case 64 /*ns_t_svcb*/:
     case 65 /*ns_t_https*/:
+    case 108 /*ns_t_eui48*/:
+    case 109 /*ns_t_eui64*/:
     case 256 /*ns_t_uri*/:
         return true;
     default:
