@@ -119,7 +119,7 @@ export function RRTypeToString(type: ns_type)
 //     case 26 /*ns_t_px*/:       return "PX";            // X.400 mail mapping.
 //     case 27 /*ns_t_gpos*/:     return "GPOS";          // Geographical position (withdrawn).
     case 28 /*ns_t_aaaa*/:     return "AAAA";          // Ip6 Address.
-//     case 29 /*ns_t_loc*/:      return "LOC";           // Location Information.
+    case 29 /*ns_t_loc*/:      return "LOC";           // Location Information (RFC 1876).
 //     case 30 /*ns_t_nxt*/:      return "NXT";           // Next domain (security).
 //     case 31 /*ns_t_eid*/:      return "EID";           // Endpoint identifier.
 //     case 32 /*ns_t_nimloc*/:   return "NIMLOC";        // Nimrod Locator.
@@ -214,7 +214,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 26 /*ns_t_px*/:       return "PX";            // X.400 mail mapping.
 //     case 27 /*ns_t_gpos*/:     return "GPOS";          // Geographical position (withdrawn).
     case "AAAA" /*ns_t_aaaa*/:     return 28;          // Ip6 Address.
-//     case 29 /*ns_t_loc*/:      return "LOC";           // Location Information.
+    case "LOC" /*ns_t_loc*/:       return 29;          // Location Information (RFC 1876).
 //     case 30 /*ns_t_nxt*/:      return "NXT";           // Next domain (security).
 //     case 31 /*ns_t_eid*/:      return "EID";           // Endpoint identifier.
 //     case 32 /*ns_t_nimloc*/:   return "NIMLOC";        // Nimrod Locator.
@@ -320,6 +320,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 16 /*ns_t_txt*/:
     case 17 /*ns_t_rp*/:
     case 28 /*ns_t_aaaa*/:
+    case 29 /*ns_t_loc*/:
     case 33 /*ns_t_srv*/:
     case 35 /*ns_t_naptr*/:
     case 37 /*ns_t_cert*/:
