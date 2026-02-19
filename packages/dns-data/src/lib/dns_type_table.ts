@@ -146,6 +146,9 @@ export function RRTypeToString(type: ns_type)
     case 52 /*ns_t_tlsa*/:	return "TLSA";
     case 53 /*ns_t_smimea*/:	return "SMIMEA";
 //     case 55 /*ns_t_hip*/:	return "HIP";
+//     ... (types 56-63 omitted)
+    case 64 /*ns_t_svcb*/:	return "SVCB";          // Service Binding (RFC 9460)
+    case 65 /*ns_t_https*/:	return "HTTPS";         // HTTPS Service Binding (RFC 9460)
 //     case 56 /*ns_t_ninfo*/:	return "NINFO";
 //     case 57 /*ns_t_rkey*/:	return "RKEY";
 //     case 58 /*ns_t_talink*/:	return "TALINK";
@@ -242,6 +245,9 @@ export function StringToRRType(str: string) : ns_type
     case "TLSA" /*ns_t_tlsa*/:	return 52;
     case "SMIMEA" /*ns_t_smimea*/:	return 53;
 //     case 55 /*ns_t_hip*/:	return "HIP";
+//     ... (types 56-63 omitted)
+    case "SVCB" /*ns_t_svcb*/:	return 64;          // Service Binding (RFC 9460)
+    case "HTTPS" /*ns_t_https*/:	return 65;      // HTTPS Service Binding (RFC 9460)
 //     case 56 /*ns_t_ninfo*/:	return "NINFO";
 //     case 57 /*ns_t_rkey*/:	return "RKEY";
 //     case 58 /*ns_t_talink*/:	return "TALINK";
@@ -333,6 +339,8 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 51 /*ns_t_nsec3param*/:
     case 52 /*ns_t_tlsa*/:
     case 53 /*ns_t_smimea*/:
+    case 64 /*ns_t_svcb*/:
+    case 65 /*ns_t_https*/:
     case 256 /*ns_t_uri*/:
         return true;
     default:

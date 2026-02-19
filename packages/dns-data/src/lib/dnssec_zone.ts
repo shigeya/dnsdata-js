@@ -8,6 +8,7 @@ import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import './dane_rr'; // Register TLSA/SMIMEA handlers
 import './sshfp_rr'; // Register SSHFP handler
+import './svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
 
 export enum KeyVerifyMode {
     None = 0,
