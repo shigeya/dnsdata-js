@@ -140,6 +140,19 @@ describe("ResourceRecord", () => {
         expect(result[1]).toBe(13);
     });
 
+    // RFC 6672 §2.1: DNAME RDATA = single <target> domain name
+    // Uses same wire encoding as NS (RFC 1035 §3.3.11)
+    it("builds DNAME record wire body", () => {
+        const rr = new ResourceRecord("example.com.", 3600, "IN", "DNAME", "example.net.");
+        const wb = new WireBuilder();
+        rr.get_wire_body(wb);
+        const result = wb.build();
+        // rdlength(2) + wire name of example.net.
+        // example.net. = 1+7(example) + 1+3(net) + 1(root) = 13
+        expect(result[0]).toBe(0x00);
+        expect(result[1]).toBe(13);
+    });
+
     it("renders to_string correctly", () => {
         const rr = new ResourceRecord("example.com.", 3600, "IN", "A", "1.2.3.4");
         expect(rr.to_string()).toBe("example.com. 3600 IN A 1.2.3.4");

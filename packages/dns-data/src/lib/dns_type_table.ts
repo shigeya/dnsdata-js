@@ -129,7 +129,7 @@ export function RRTypeToString(type: ns_type)
 //     case 36 /*ns_t_kx*/:       return "KX";            // Key Exchange
 //     case 37 /*ns_t_cert*/:     return "CERT";          // Certification record
 //     case 38 /*ns_t_a6*/:       return "A6";            // IPv6 address(deprecates AAAA)
-//     case 39 /*ns_t_dname*/:    return "DNAME";         // Non-terminal DNAME (for IPv6)
+    case 39 /*ns_t_dname*/:    return "DNAME";         // Non-terminal DNAME (RFC 6672)
 //     case 40 /*ns_t_sink*/:     return "SINK";          // Kitchen sink (experimentatl)
 //     case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR)
 //     case 42 /*ns_t_apl*/:	return "APL";
@@ -225,7 +225,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 36 /*ns_t_kx*/:       return "KX";            // Key Exchange
 //     case 37 /*ns_t_cert*/:     return "CERT";          // Certification record
 //     case 38 /*ns_t_a6*/:       return "A6";            // IPv6 address(deprecates AAAA)
-//     case 39 /*ns_t_dname*/:    return "DNAME";         // Non-terminal DNAME (for IPv6)
+    case "DNAME" /*ns_t_dname*/:    return 39;         // Non-terminal DNAME (RFC 6672)
 //     case 40 /*ns_t_sink*/:     return "SINK";          // Kitchen sink (experimentatl)
 //     case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR)
 //     case 42 /*ns_t_apl*/:	return "APL";
@@ -323,6 +323,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 28 /*ns_t_aaaa*/:
     case 33 /*ns_t_srv*/:
     case 35 /*ns_t_naptr*/:
+    case 39 /*ns_t_dname*/:
     case 43 /*ns_t_ds*/:
     case 46 /*ns_t_rrsig*/:
     case 47 /*ns_t_nsec*/:

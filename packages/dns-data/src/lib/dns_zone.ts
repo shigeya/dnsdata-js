@@ -180,6 +180,8 @@ export class ResourceRecord {
         case 6 /*SOA*/:     this._wire_body_soa(builder); break;
         // RFC 1035 §3.3.12: PTR RDATA = single <domain-name>, same wire format as NS (§3.3.11)
         case 12 /*PTR*/:    this._wire_body_ns(builder); break;
+        // RFC 6672 §2.1: DNAME RDATA = single <target> domain name, same wire format as NS
+        case 39 /*DNAME*/:  this._wire_body_ns(builder); break;
         case 15 /*MX*/:     this._wire_body_mx(builder); break;
         case 16 /*TXT*/:    this._wire_body_txt(builder); break;
         case 28 /*AAAA*/:   this._wire_body_aaaa(builder); break;
