@@ -127,6 +127,19 @@ describe("ResourceRecord", () => {
         expect(result[3]).toBe(5);   // tag length
     });
 
+    // RFC 1035 §3.3.1: CNAME RDATA = single <domain-name>
+    // Uses same wire encoding as NS (§3.3.11)
+    it("builds CNAME record wire body", () => {
+        const rr = new ResourceRecord("www.example.com.", 3600, "IN", "CNAME", "example.com.");
+        const wb = new WireBuilder();
+        rr.get_wire_body(wb);
+        const result = wb.build();
+        // rdlength(2) + wire name of example.com.
+        // example.com. = 1+7(example) + 1+3(com) + 1(root) = 13
+        expect(result[0]).toBe(0x00);
+        expect(result[1]).toBe(13);
+    });
+
     it("renders to_string correctly", () => {
         const rr = new ResourceRecord("example.com.", 3600, "IN", "A", "1.2.3.4");
         expect(rr.to_string()).toBe("example.com. 3600 IN A 1.2.3.4");

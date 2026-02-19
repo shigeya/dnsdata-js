@@ -175,8 +175,11 @@ export class ResourceRecord {
         switch (this.type) {
         case 1 /*A*/:       this._wire_body_a(builder); break;
         case 2 /*NS*/:      this._wire_body_ns(builder); break;
+        // RFC 1035 §3.3.1: CNAME RDATA = single <domain-name>, same wire format as NS (§3.3.11)
+        case 5 /*CNAME*/:   this._wire_body_ns(builder); break;
         case 6 /*SOA*/:     this._wire_body_soa(builder); break;
-        case 12 /*PTR*/:    this._wire_body_ns(builder); break; // same format as NS
+        // RFC 1035 §3.3.12: PTR RDATA = single <domain-name>, same wire format as NS (§3.3.11)
+        case 12 /*PTR*/:    this._wire_body_ns(builder); break;
         case 15 /*MX*/:     this._wire_body_mx(builder); break;
         case 16 /*TXT*/:    this._wire_body_txt(builder); break;
         case 28 /*AAAA*/:   this._wire_body_aaaa(builder); break;
@@ -193,6 +196,8 @@ export class ResourceRecord {
         builder.append_bytes(ip);
     }
 
+    // RFC 1035: Wire format for single <domain-name> RDATA.
+    // Shared by NS (§3.3.11), CNAME (§3.3.1), and PTR (§3.3.12).
     private _wire_body_ns(builder: WireBuilder): void {
         const name = this.value.trim().split(/\s+/)[0];
         const wire = domain_name2wire(name);
