@@ -127,7 +127,7 @@ export function RRTypeToString(type: ns_type)
 //     case 34 /*ns_t_atma*/:     return "ATMA";          // ATM Address
     case 35 /*ns_t_naptr*/:    return "NAPTR";         // Naming Authority PoinTeR
 //     case 36 /*ns_t_kx*/:       return "KX";            // Key Exchange
-//     case 37 /*ns_t_cert*/:     return "CERT";          // Certification record
+    case 37 /*ns_t_cert*/:     return "CERT";          // Certificate record (RFC 4398)
 //     case 38 /*ns_t_a6*/:       return "A6";            // IPv6 address(deprecates AAAA)
     case 39 /*ns_t_dname*/:    return "DNAME";         // Non-terminal DNAME (RFC 6672)
 //     case 40 /*ns_t_sink*/:     return "SINK";          // Kitchen sink (experimentatl)
@@ -222,7 +222,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 34 /*ns_t_atma*/:     return "ATMA";          // ATM Address
     case "NAPTR" /*ns_t_naptr*/:    return 35;         // Naming Authority PoinTeR
 //     case 36 /*ns_t_kx*/:       return "KX";            // Key Exchange
-//     case 37 /*ns_t_cert*/:     return "CERT";          // Certification record
+    case "CERT" /*ns_t_cert*/:     return 37;          // Certificate record (RFC 4398)
 //     case 38 /*ns_t_a6*/:       return "A6";            // IPv6 address(deprecates AAAA)
     case "DNAME" /*ns_t_dname*/:    return 39;         // Non-terminal DNAME (RFC 6672)
 //     case 40 /*ns_t_sink*/:     return "SINK";          // Kitchen sink (experimentatl)
@@ -322,6 +322,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 28 /*ns_t_aaaa*/:
     case 33 /*ns_t_srv*/:
     case 35 /*ns_t_naptr*/:
+    case 37 /*ns_t_cert*/:
     case 39 /*ns_t_dname*/:
     case 43 /*ns_t_ds*/:
     case 44 /*ns_t_sshfp*/:
