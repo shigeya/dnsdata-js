@@ -12,6 +12,7 @@ import './svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
 import './eui_rr'; // Register EUI48/EUI64 handlers (RFC 7043)
 import './hinfo_rr'; // Register HINFO handler (RFC 1035 §3.3.2)
 import './rp_rr'; // Register RP handler (RFC 1183 §2.2)
+import './openpgpkey_rr'; // Register OPENPGPKEY handler (RFC 7929)
 
 export enum KeyVerifyMode {
     None = 0,
