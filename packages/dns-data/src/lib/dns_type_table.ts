@@ -146,16 +146,12 @@ export function RRTypeToString(type: ns_type)
     case 52 /*ns_t_tlsa*/:	return "TLSA";
     case 53 /*ns_t_smimea*/:	return "SMIMEA";
 //     case 55 /*ns_t_hip*/:	return "HIP";
-//     ... (types 56-63 omitted)
-    case 64 /*ns_t_svcb*/:	return "SVCB";          // Service Binding (RFC 9460)
-    case 65 /*ns_t_https*/:	return "HTTPS";         // HTTPS Service Binding (RFC 9460)
-//     case 56 /*ns_t_ninfo*/:	return "NINFO";
-//     case 57 /*ns_t_rkey*/:	return "RKEY";
-//     case 58 /*ns_t_talink*/:	return "TALINK";
-//     case 59 /*ns_t_cds*/:	return "CDS";
-//     case 60 /*ns_t_cdnskey*/:	return "CDNSKEY";
+    case 59 /*ns_t_cds*/:	return "CDS";           // Child DS (RFC 7344)
+    case 60 /*ns_t_cdnskey*/:	return "CDNSKEY";       // Child DNSKEY (RFC 7344)
 //     case 61 /*ns_t_openpgpkey*/:return "OPENPGPKEY";
 //     case 62 /*ns_t_csync*/:	return "CSYNC";
+    case 64 /*ns_t_svcb*/:	return "SVCB";          // Service Binding (RFC 9460)
+    case 65 /*ns_t_https*/:	return "HTTPS";         // HTTPS Service Binding (RFC 9460)
 //     case 99 /*ns_t_spf*/:	return "SPF";
 //     case 100 /*ns_t_uinfo*/:	return "UINFO";
 //     case 101 /*ns_t_uid*/:	return "UID";
@@ -245,16 +241,10 @@ export function StringToRRType(str: string) : ns_type
     case "TLSA" /*ns_t_tlsa*/:	return 52;
     case "SMIMEA" /*ns_t_smimea*/:	return 53;
 //     case 55 /*ns_t_hip*/:	return "HIP";
-//     ... (types 56-63 omitted)
+    case "CDS" /*ns_t_cds*/:	return 59;          // Child DS (RFC 7344)
+    case "CDNSKEY" /*ns_t_cdnskey*/:	return 60;  // Child DNSKEY (RFC 7344)
     case "SVCB" /*ns_t_svcb*/:	return 64;          // Service Binding (RFC 9460)
     case "HTTPS" /*ns_t_https*/:	return 65;      // HTTPS Service Binding (RFC 9460)
-//     case 56 /*ns_t_ninfo*/:	return "NINFO";
-//     case 57 /*ns_t_rkey*/:	return "RKEY";
-//     case 58 /*ns_t_talink*/:	return "TALINK";
-//     case 59 /*ns_t_cds*/:	return "CDS";
-//     case 60 /*ns_t_cdnskey*/:	return "CDNSKEY";
-//     case 61 /*ns_t_openpgpkey*/:return "OPENPGPKEY";
-//     case 62 /*ns_t_csync*/:	return "CSYNC";
 //     case 99 /*ns_t_spf*/:	return "SPF";
 //     case 100 /*ns_t_uinfo*/:	return "UINFO";
 //     case 101 /*ns_t_uid*/:	return "UID";
@@ -339,6 +329,8 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 51 /*ns_t_nsec3param*/:
     case 52 /*ns_t_tlsa*/:
     case 53 /*ns_t_smimea*/:
+    case 59 /*ns_t_cds*/:
+    case 60 /*ns_t_cdnskey*/:
     case 64 /*ns_t_svcb*/:
     case 65 /*ns_t_https*/:
     case 256 /*ns_t_uri*/:

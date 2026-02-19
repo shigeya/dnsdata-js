@@ -696,8 +696,14 @@ function base32hex_decode(input: string): Uint8Array {
 
 // Register handlers so that ResourceRecord.get_handler() can create them
 register_rr_handler(StringToRRType('DNSKEY'), (rr, value) => new DNSKey(rr, value));
+// RFC 7344 §3.2: CDNSKEY wire and presentation format is identical to DNSKEY (RFC 4034).
+// The DNSKey handler class is reused; only the RR type code (60) differs.
+register_rr_handler(StringToRRType('CDNSKEY'), (rr, value) => new DNSKey(rr, value));
 register_rr_handler(StringToRRType('RRSIG'), (rr, value) => new RRSig(rr, value));
 register_rr_handler(StringToRRType('DS'), (rr, value) => new DNSRR_DS(rr, value));
+// RFC 7344 §3.1: CDS wire and presentation format is identical to DS (RFC 4034).
+// The DNSRR_DS handler class is reused; only the RR type code (59) differs.
+register_rr_handler(StringToRRType('CDS'), (rr, value) => new DNSRR_DS(rr, value));
 register_rr_handler(StringToRRType('NSEC'), (rr, value) => new DNSRR_NSEC(rr, value));
 register_rr_handler(StringToRRType('NSEC3'), (rr, value) => new DNSRR_NSEC3(rr, value));
 register_rr_handler(StringToRRType('NSEC3PARAM'), (rr, value) => new DNSRR_NSEC3PARAM(rr, value));
