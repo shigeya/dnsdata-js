@@ -7,6 +7,7 @@ import { StringToRRType, RRTypeToString } from './dns_type_table';
 import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import './dane_rr'; // Register TLSA/SMIMEA handlers
+import './sshfp_rr'; // Register SSHFP handler
 
 export enum KeyVerifyMode {
     None = 0,

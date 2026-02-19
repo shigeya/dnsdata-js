@@ -134,7 +134,7 @@ export function RRTypeToString(type: ns_type)
 //     case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR)
 //     case 42 /*ns_t_apl*/:	return "APL";
     case 43 /*ns_t_ds*/:	return "DS";
-//     case 44 /*ns_t_sshfp*/:	return "SSHFP";
+    case 44 /*ns_t_sshfp*/:	return "SSHFP";         // SSH Fingerprint (RFC 4255)
 //     case 45 /*ns_t_ipseckey*/:	return "IPSECKEY";
     case 46 /*ns_t_rrsig*/:	return "RRSIG";
     case 47 /*ns_t_nsec*/:	return "NSEC";
@@ -230,7 +230,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR)
 //     case 42 /*ns_t_apl*/:	return "APL";
     case "DS" /*ns_t_ds*/:	return 43;
-//     case 44 /*ns_t_sshfp*/:	return "SSHFP";
+    case "SSHFP" /*ns_t_sshfp*/:	return 44;         // SSH Fingerprint (RFC 4255)
 //     case 45 /*ns_t_ipseckey*/:	return "IPSECKEY";
     case "RRSIG" /*ns_t_rrsig*/:	return 46;
     case "NSEC" /*ns_t_nsec*/:	return 47;
@@ -325,6 +325,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 35 /*ns_t_naptr*/:
     case 39 /*ns_t_dname*/:
     case 43 /*ns_t_ds*/:
+    case 44 /*ns_t_sshfp*/:
     case 46 /*ns_t_rrsig*/:
     case 47 /*ns_t_nsec*/:
     case 48 /*ns_t_dnskey*/:
