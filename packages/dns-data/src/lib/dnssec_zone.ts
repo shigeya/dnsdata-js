@@ -26,6 +26,10 @@ export enum KeyVerifyMode {
 
 export class DNSSecZone extends Zone {
     private seps: string[] = [];
+    private _parent: DNSSecZone | null = null;
+
+    get parent(): DNSSecZone | null { return this._parent; }
+    set parent(zone: DNSSecZone | null) { this._parent = zone; }
 
     add_sep(name: string): void {
         this.seps.push(name);
@@ -164,13 +168,21 @@ export class DNSSecZone extends Zone {
         return this.verify_rrset(dnskey.label, StringToRRType('DNSKEY'), KeyVerifyMode.KSK);
     }
 
+    // Verify DS RRset RRSIG using parent zone's keys
+    verify_ds_rrset(child_name: string): boolean {
+        if (!this._parent) return false;
+        return this._parent.verify_rrset(child_name, StringToRRType('DS'));
+    }
+
     verify_delegation_signer(dnskey: DNSKey): boolean {
         if (this.is_secure_entry_point(dnskey.label)) {
             return true; // trust anchor reached
         }
 
+        // RFC 4035: DS records reside in the parent zone
+        const ds_source = this._parent || this;
         const ds_type = StringToRRType('DS');
-        const ds_records = this.find_rrset(dnskey.label, ds_type);
+        const ds_records = ds_source.find_rrset(dnskey.label, ds_type);
         if (ds_records.length === 0) return false;
 
         // RFC 4035: any-valid semantics — at least one supported DS must match

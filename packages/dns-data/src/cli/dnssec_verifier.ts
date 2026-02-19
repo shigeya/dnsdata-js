@@ -1,5 +1,5 @@
 import { DNSSecZone, KeyVerifyMode } from '../lib/dnssec_zone';
-import { DNSKey, RRSig, DNSRR_DS } from '../lib/dnssec_rr';
+import { DNSRR_DS } from '../lib/dnssec_rr';
 import { RRTypeToString, StringToRRType } from '../lib/dns_type_table';
 import { DNSAnswer, DNSResponse } from './resolver';
 import { DoHResolver, DoHProvider } from './resolver_doh';
@@ -82,13 +82,6 @@ function normalizeRecordData(typeName: string, data: string): string {
     return data;
 }
 
-function extractZoneName(fqdn: string): string {
-    // For a FQDN like "www.example.com.", the zone is typically "example.com."
-    // But for simplicity, we try the FQDN itself first (works when querying zone apex).
-    // The RRSIG signer field tells us the actual zone.
-    return fqdn;
-}
-
 // Decompose FQDN into delegation chain: "example.com." -> ['.', 'com.', 'example.com.']
 export function decomposeFQDN(fqdn: string): string[] {
     const name = fqdn.endsWith('.') ? fqdn : fqdn + '.';
@@ -138,27 +131,6 @@ function loadRootAnchorsToZone(zone: DNSSecZone, details: string[]): RootAnchorD
     return anchors.ds;
 }
 
-// Verify that a zone's KSK matches at least one DS record (any-valid)
-// Returns the matched KSK or null
-function verifyKSKMatchesDS(zone: DNSSecZone, zoneName: string, dnskeyType: number, dsType: number): DNSKey | null {
-    const dsRRs = zone.find_rrset(zoneName, dsType);
-    const dnskeyRRs = zone.find_rrset(zoneName, dnskeyType);
-
-    for (const dnskeyRR of dnskeyRRs) {
-        const handler = dnskeyRR.get_handler();
-        if (!(handler instanceof DNSKey) || !handler.is_secure_entry_point()) continue;
-
-        const keyDigest = handler.get_ds_digest_data();
-        for (const dsRR of dsRRs) {
-            const dsHandler = dsRR.get_handler();
-            if (dsHandler instanceof DNSRR_DS && dsHandler.verify_digest(keyDigest)) {
-                return handler;
-            }
-        }
-    }
-    return null;
-}
-
 // Fetch DS for a child zone; returns description string if DS found, null if absent
 async function fetchDS(
     doh: DoHResolver, zone: DNSSecZone, childZone: string, dsType: number,
@@ -174,26 +146,6 @@ async function fetchDS(
     }).join(', ');
 }
 
-// Verify DNSKEY RRset for a non-root zone (KSK matches DS + DNSKEY RRSIG)
-function verifyChildDNSKEY(
-    zone: DNSSecZone, zoneName: string, dnskeyType: number, dsType: number, details: string[],
-): boolean {
-    const matchedKSK = verifyKSKMatchesDS(zone, zoneName, dnskeyType, dsType);
-    if (!matchedKSK) {
-        details.push(`[${zoneName}] KSK matches DS -> FAILED`);
-        return false;
-    }
-    details.push(`[${zoneName}] KSK matches DS -> VALID (keytag=${matchedKSK.key_tag}/${algoName(matchedKSK.algorithm)})`);
-
-    zone.add_sep(zoneName);
-    if (!zone.verify_rrset(zoneName, dnskeyType, KeyVerifyMode.KSK)) {
-        details.push(`[${zoneName}] DNSKEY RRset RRSIG -> FAILED`);
-        return false;
-    }
-    details.push(`[${zoneName}] DNSKEY RRset RRSIG -> VALID`);
-    return true;
-}
-
 export async function verifyDNSSECChain(
     fqdn: string,
     rrtype: number,
@@ -201,16 +153,26 @@ export async function verifyDNSSECChain(
     dohProvider: DoHProvider = 'google',
 ): Promise<VerificationResult> {
     const details: string[] = [];
-    const zone = new DNSSecZone();
+    const zones = new Map<string, DNSSecZone>();
     const doh = new DoHResolver(dohProvider);
 
     // Ensure trailing dot
     const name = fqdn.endsWith('.') ? fqdn : fqdn + '.';
 
-    // Determine the signer zone from the primary response
-    addDoHResponseToZone(zone, primaryResponse);
+    // Helper: get or create a zone for a given name
+    function getZone(zoneName: string): DNSSecZone {
+        let z = zones.get(zoneName);
+        if (!z) {
+            z = new DNSSecZone();
+            zones.set(zoneName, z);
+        }
+        return z;
+    }
 
-    const rrsigs = zone.find_rrsigs(name, rrtype);
+    // Determine the signer zone from the primary response
+    const signerDetectZone = new DNSSecZone();
+    addDoHResponseToZone(signerDetectZone, primaryResponse);
+    const rrsigs = signerDetectZone.find_rrsigs(name, rrtype);
     if (rrsigs.length === 0) {
         details.push('No RRSIG records found covering the queried type');
         return { verified: false, details };
@@ -220,102 +182,115 @@ export async function verifyDNSSECChain(
     // Full name hierarchy: e.g. ['.', 'jp.', 'ad.jp.', 'wide.ad.jp.']
     const hierarchy = decomposeFQDN(signerName);
 
-    // Load root trust anchors
-    const rootDS = loadRootAnchorsToZone(zone, details);
-
     const dnskeyType = StringToRRType('DNSKEY');
     const dsType = StringToRRType('DS');
 
     // --- Step 1: Verify root DNSKEY against trust anchor ---
+    const rootZone = getZone('.');
+
+    // Load root trust anchors (DS records) into root zone
+    loadRootAnchorsToZone(rootZone, details);
+
     try {
         const dnskeyResp = await doh.resolve('.', dnskeyType);
-        const count = addDoHResponseToZone(zone, dnskeyResp);
+        const count = addDoHResponseToZone(rootZone, dnskeyResp);
         details.push(`[.] DNSKEY RRset (DoH) -> fetched ${count} records`);
     } catch (err: any) {
         details.push(`[.] DNSKEY fetch failed: ${err.message}`);
         return { verified: false, details };
     }
 
-    const dnskeyRrsigs = zone.find_rrsigs('.', dnskeyType);
-    let rootDnskeyValid = false;
-    for (const rrsig of dnskeyRrsigs) {
-        const signingKey = zone.find_dnskey('.', rrsig.key_tag);
-        if (!signingKey) continue;
+    // Root zone DS is in rootZone itself, so verify_delegation_signer
+    // will find DS via ds_source = this (no parent needed)
+    rootZone.add_sep('.');
+    if (!rootZone.verify_rrset('.', dnskeyType, KeyVerifyMode.KSK)) {
+        // Fallback: manual root DNSKEY verification for trust anchor bootstrap
+        const dnskeyRrsigs = rootZone.find_rrsigs('.', dnskeyType);
+        let rootDnskeyValid = false;
+        for (const rrsig of dnskeyRrsigs) {
+            const signingKey = rootZone.find_dnskey('.', rrsig.key_tag);
+            if (!signingKey) continue;
 
-        // Check signing key matches a trust anchor DS
-        let dsMatch = false;
-        const dsRRs = zone.find_rrset('.', dsType);
-        for (const dsRR of dsRRs) {
-            const handler = dsRR.get_handler();
-            if (handler instanceof DNSRR_DS) {
-                const keyDigest = signingKey.get_ds_digest_data();
-                if (handler.verify_digest(keyDigest)) { dsMatch = true; break; }
+            let dsMatch = false;
+            const dsRRs = rootZone.find_rrset('.', dsType);
+            for (const dsRR of dsRRs) {
+                const handler = dsRR.get_handler();
+                if (handler instanceof DNSRR_DS) {
+                    const keyDigest = signingKey.get_ds_digest_data();
+                    if (handler.verify_digest(keyDigest)) { dsMatch = true; break; }
+                }
+            }
+            if (!dsMatch) continue;
+
+            const digestTarget = rootZone.create_digest_target(rrsig, '.', dnskeyType);
+            if (digestTarget && signingKey.verify(digestTarget, rrsig.signature)) {
+                rootDnskeyValid = true;
+                break;
             }
         }
-        if (!dsMatch) continue;
 
-        const digestTarget = zone.create_digest_target(rrsig, '.', dnskeyType);
-        if (digestTarget && signingKey.verify(digestTarget, rrsig.signature)) {
-            rootDnskeyValid = true;
-            break;
+        if (!rootDnskeyValid) {
+            details.push(`[.] DNSKEY RRset RRSIG -> FAILED`);
+            return { verified: false, details };
         }
     }
-
-    if (rootDnskeyValid) {
-        details.push(`[.] DNSKEY RRset RRSIG -> VALID`);
-    } else {
-        details.push(`[.] DNSKEY RRset RRSIG -> FAILED`);
-        return { verified: false, details };
-    }
+    details.push(`[.] DNSKEY RRset RRSIG -> VALID`);
 
     // --- Step 2: Walk delegation chain dynamically ---
-    // At each verified parent, probe child zones for DS in hierarchy order.
-    // Zones without DS (insecure delegations) are skipped.
     let parentIdx = 0; // index in hierarchy; 0 = root
 
     while (parentIdx < hierarchy.length - 1) {
-        const parentZone = hierarchy[parentIdx];
+        const parentName = hierarchy[parentIdx];
+        const parentZone = getZone(parentName);
         let foundChildIdx = -1;
 
-        // Try each candidate from closest child to target zone
         for (let childIdx = parentIdx + 1; childIdx < hierarchy.length; childIdx++) {
-            const childZone = hierarchy[childIdx];
+            const childName = hierarchy[childIdx];
 
+            // Fetch DS into parent zone
             let keyTags: string | null;
             try {
-                keyTags = await fetchDS(doh, zone, childZone, dsType);
+                keyTags = await fetchDS(doh, parentZone, childName, dsType);
             } catch (err: any) {
-                details.push(`[${parentZone} -> ${childZone}] DS fetch failed: ${err.message}`);
+                details.push(`[${parentName} -> ${childName}] DS fetch failed: ${err.message}`);
                 return { verified: false, details };
             }
 
             if (keyTags === null) {
-                details.push(`[${parentZone} -> ${childZone}] DS -> not found (insecure delegation, skipping)`);
+                details.push(`[${parentName} -> ${childName}] DS -> not found (insecure delegation, skipping)`);
                 continue;
             }
 
-            details.push(`[${parentZone} -> ${childZone}] DS (DoH) -> fetched, keytag=${keyTags}`);
+            details.push(`[${parentName} -> ${childName}] DS (DoH) -> fetched, keytag=${keyTags}`);
 
-            // Verify DS RRSIG (signed by parent zone's ZSK)
-            if (!zone.verify_rrset(childZone, dsType)) {
-                details.push(`[${parentZone} -> ${childZone}] DS RRSIG -> FAILED`);
+            // Verify DS RRSIG (signed by parent zone's keys)
+            if (!parentZone.verify_rrset(childName, dsType)) {
+                details.push(`[${parentName} -> ${childName}] DS RRSIG -> FAILED`);
                 return { verified: false, details };
             }
-            details.push(`[${parentZone} -> ${childZone}] DS RRSIG -> VALID`);
+            details.push(`[${parentName} -> ${childName}] DS RRSIG -> VALID`);
 
-            // Fetch and verify child zone's DNSKEY
+            // Create child zone with parent reference
+            const childZone = getZone(childName);
+            childZone.parent = parentZone;
+
+            // Fetch child DNSKEY
             try {
-                const dnskeyResp = await doh.resolve(childZone, dnskeyType);
-                const count = addDoHResponseToZone(zone, dnskeyResp);
-                details.push(`[${childZone}] DNSKEY (DoH) -> fetched ${count} records`);
+                const dnskeyResp = await doh.resolve(childName, dnskeyType);
+                const count = addDoHResponseToZone(childZone, dnskeyResp);
+                details.push(`[${childName}] DNSKEY (DoH) -> fetched ${count} records`);
             } catch (err: any) {
-                details.push(`[${childZone}] DNSKEY fetch failed: ${err.message}`);
+                details.push(`[${childName}] DNSKEY fetch failed: ${err.message}`);
                 return { verified: false, details };
             }
 
-            if (!verifyChildDNSKEY(zone, childZone, dnskeyType, dsType, details)) {
+            // verify_rrset with KSK mode: verify_delegation_signer looks up DS
+            // in childZone.parent (= parentZone) automatically
+            if (!childZone.verify_rrset(childName, dnskeyType, KeyVerifyMode.KSK)) {
+                details.push(`[${childName}] DNSKEY RRset RRSIG -> FAILED`);
                 return { verified: false, details };
             }
+            details.push(`[${childName}] DNSKEY RRset RRSIG -> VALID`);
 
             foundChildIdx = childIdx;
             break;
@@ -329,17 +304,20 @@ export async function verifyDNSSECChain(
     }
 
     // --- Step 3: Verify the target RRset RRSIG ---
-    const targetZone = hierarchy[parentIdx];
-    const rrsetValid = zone.verify_rrset(name, rrtype);
+    const targetName = hierarchy[parentIdx];
+    const targetZone = getZone(targetName);
+    // Add primary response records to the target zone
+    addDoHResponseToZone(targetZone, primaryResponse);
+    const rrsetValid = targetZone.verify_rrset(name, rrtype);
     const typeStr = RRTypeToString(rrtype);
-    const targetRrsigs = zone.find_rrsigs(name, rrtype);
+    const targetRrsigs = targetZone.find_rrsigs(name, rrtype);
     const rrsigAlgo = targetRrsigs.length > 0 ? ` (${algoName(targetRrsigs[0].algorithm)})` : '';
     if (rrsetValid) {
-        details.push(`[${targetZone}] ${typeStr} RRSIG -> VALID${rrsigAlgo}`);
+        details.push(`[${targetName}] ${typeStr} RRSIG -> VALID${rrsigAlgo}`);
         details.push(`Result: SECURE (full chain verified to root)`);
         return { verified: true, details };
     } else {
-        details.push(`[${targetZone}] ${typeStr} RRSIG -> FAILED${rrsigAlgo}`);
+        details.push(`[${targetName}] ${typeStr} RRSIG -> FAILED${rrsigAlgo}`);
         return { verified: false, details };
     }
 }

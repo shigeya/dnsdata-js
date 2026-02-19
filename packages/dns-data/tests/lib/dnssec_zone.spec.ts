@@ -181,6 +181,139 @@ describe("DNSSecZone", () => {
     });
 });
 
+// Helper: create a parent-child zone pair with DS in parent
+function create_parent_child_zones(): {
+    parentZone: DNSSecZone,
+    childZone: DNSSecZone,
+    parentKeyTag: number,
+    childKeyTag: number,
+} {
+    // Generate parent key (RSA)
+    const parentKP = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const parentJwk = parentKP.publicKey.export({ format: 'jwk' } as any) as any;
+    const parentN = Buffer.from(parentJwk.n, 'base64url');
+    const parentE = Buffer.from(parentJwk.e, 'base64url');
+    const parentRfc3110 = Buffer.concat([Buffer.from([parentE.length]), parentE, parentN]);
+    const parentKeyB64 = parentRfc3110.toString('base64');
+
+    // Generate child key (RSA)
+    const childKP = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const childJwk = childKP.publicKey.export({ format: 'jwk' } as any) as any;
+    const childN = Buffer.from(childJwk.n, 'base64url');
+    const childE = Buffer.from(childJwk.e, 'base64url');
+    const childRfc3110 = Buffer.concat([Buffer.from([childE.length]), childE, childN]);
+    const childKeyB64 = childRfc3110.toString('base64');
+
+    // --- Parent zone ---
+    const parentZone = new DNSSecZone();
+    parentZone.add_rr_from_parts("com.", 3600, "IN", "SOA",
+        "ns1.com. admin.com. 2021010101 3600 900 604800 86400");
+    parentZone.add_rr_from_parts("com.", 3600, "IN", "DNSKEY", `257 3 8 ${parentKeyB64}`);
+    parentZone.add_sep("com.");
+
+    const parentDnskeyRR = parentZone.find_rr("com.", 48)!;
+    const parentDnskey = parentDnskeyRR.get_handler() as DNSKey;
+    parentDnskey.set_private_key(parentKP.privateKey);
+
+    // Sign parent DNSKEY
+    const parentDnskeyRrsig = parentZone.sign_rr("com.", 3600, 48, parentDnskey, 1000000000, 2000000000);
+    if (parentDnskeyRrsig) parentZone.add_rr(parentDnskeyRrsig);
+
+    // --- Child zone ---
+    const childZone = new DNSSecZone();
+    childZone.add_rr_from_parts("example.com.", 3600, "IN", "SOA",
+        "ns1.example.com. admin.example.com. 2021010101 3600 900 604800 86400");
+    childZone.add_rr_from_parts("example.com.", 3600, "IN", "A", "93.184.216.34");
+    childZone.add_rr_from_parts("example.com.", 3600, "IN", "DNSKEY", `257 3 8 ${childKeyB64}`);
+
+    const childDnskeyRR = childZone.find_rr("example.com.", 48)!;
+    const childDnskey = childDnskeyRR.get_handler() as DNSKey;
+    childDnskey.set_private_key(childKP.privateKey);
+
+    // Sign child DNSKEY (self-signed by child KSK)
+    const childDnskeyRrsig = childZone.sign_rr("example.com.", 3600, 48, childDnskey, 1000000000, 2000000000);
+    if (childDnskeyRrsig) childZone.add_rr(childDnskeyRrsig);
+
+    // Sign child A record
+    const aRrsig = childZone.sign_rr("example.com.", 3600, 1, childDnskey, 1000000000, 2000000000);
+    if (aRrsig) childZone.add_rr(aRrsig);
+
+    // Compute DS for child KSK and add to parent zone
+    const dsInput = childDnskey.get_ds_digest_data();
+    const dsHash = crypto.createHash('sha256').update(Buffer.from(dsInput)).digest();
+    const dsHex = Buffer.from(dsHash).toString('hex');
+    const dsValue = `${childDnskey.key_tag} ${childDnskey.algorithm} 2 ${dsHex}`;
+    parentZone.add_rr_from_parts("example.com.", 3600, "IN", "DS", dsValue);
+
+    // Sign DS RRset with parent key
+    const dsRrsig = parentZone.sign_rr("example.com.", 3600, 43, parentDnskey, 1000000000, 2000000000); // DS=43
+    if (dsRrsig) parentZone.add_rr(dsRrsig);
+
+    // Link child to parent
+    childZone.parent = parentZone;
+
+    return {
+        parentZone,
+        childZone,
+        parentKeyTag: parentDnskey.key_tag,
+        childKeyTag: childDnskey.key_tag,
+    };
+}
+
+describe("DNSSecZone parent zone", () => {
+    it("verify_delegation_signer with parent zone finds DS in parent", () => {
+        const { childZone, childKeyTag } = create_parent_child_zones();
+        const childDnskey = childZone.find_dnskey("example.com.", childKeyTag)!;
+        // DS is in parent zone, child zone has parent set
+        expect(childZone.verify_delegation_signer(childDnskey)).toBe(true);
+    });
+
+    it("verify_delegation_signer falls back to self when no parent", () => {
+        const { zone, keyTag } = create_test_zone();
+        // No parent set, DS not in zone either, but SEP is set
+        zone.add_sep("example.com.");
+        const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+        expect(zone.verify_delegation_signer(dnskey)).toBe(true);
+    });
+
+    it("verify_delegation_signer fails when DS is only in parent but parent not set", () => {
+        const { parentZone, childZone, childKeyTag } = create_parent_child_zones();
+        // Unlink parent
+        childZone.parent = null;
+        const childDnskey = childZone.find_dnskey("example.com.", childKeyTag)!;
+        // DS only exists in parentZone, not in childZone, so should fail
+        expect(childZone.verify_delegation_signer(childDnskey)).toBe(false);
+    });
+
+    it("verify_ds_rrset uses parent zone keys to verify DS RRSIG", () => {
+        const { childZone } = create_parent_child_zones();
+        // DS RRset in parent zone was signed by parent key
+        expect(childZone.verify_ds_rrset("example.com.")).toBe(true);
+    });
+
+    it("verify_ds_rrset returns false when no parent set", () => {
+        const { zone } = create_test_zone();
+        expect(zone.verify_ds_rrset("example.com.")).toBe(false);
+    });
+
+    it("verify_rrset with KSK mode + parent: full chain verification", () => {
+        const { childZone } = create_parent_child_zones();
+        // KSK mode: verify_ksk -> verify_delegation_signer -> finds DS in parent
+        // Then verify DNSKEY RRSIG
+        expect(childZone.verify_rrset("example.com.", 48, KeyVerifyMode.KSK)).toBe(true);
+    });
+
+    it("parent getter/setter works correctly", () => {
+        const zone1 = new DNSSecZone();
+        const zone2 = new DNSSecZone();
+        expect(zone1.parent).toBeNull();
+        zone1.parent = zone2;
+        expect(zone1.parent).toBe(zone2);
+        zone1.parent = null;
+        expect(zone1.parent).toBeNull();
+    });
+});
+
 describe("DNSSecZone signing", () => {
     it("can sign and then verify an RRset", () => {
         const { zone, keyTag } = create_test_zone();
