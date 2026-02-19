@@ -633,6 +633,44 @@ export class DNSRR_NSEC3 extends ResourceRecordHandler {
     }
 }
 
+//////////////////////////////////////////////////////////// NSEC3PARAM
+// RFC 5155 §4.2: NSEC3PARAM RDATA mirrors the first four fields of NSEC3 (§3.2):
+//   hash_algorithm(1) + flags(1) + iterations(2) + salt_length(1) + salt(variable)
+// Unlike NSEC3, it does not contain Next Hashed Owner Name or Type Bit Maps.
+
+export class DNSRR_NSEC3PARAM extends ResourceRecordHandler {
+    readonly hash_algorithm: number;
+    readonly flags: number;
+    readonly iterations: number;
+    readonly salt: Uint8Array;
+
+    constructor(rr: ResourceRecord | null, value: string) {
+        super(rr);
+        // Parse: "{hash_algo} {flags} {iterations} {salt}"
+        const parts = value.trim().split(/\s+/);
+        if (parts.length < 4) throw new DNSZonePresentationFormatError("NSEC3PARAM: Presentation format error: " + value);
+
+        this.hash_algorithm = parseInt(parts[0]);
+        this.flags = parseInt(parts[1]);
+        this.iterations = parseInt(parts[2]);
+        this.salt = parts[3] === '-' ? new Uint8Array(0) : new Uint8Array(Buffer.from(parts[3], 'hex'));
+    }
+
+    get_wire_body(builder: WireBuilder): void {
+        const rdlen = 5 + this.salt.length;
+        builder.append_uint16(rdlen);
+        builder.append_uint8(this.hash_algorithm);
+        builder.append_uint8(this.flags);
+        builder.append_uint16(this.iterations);
+        builder.append_uint8(this.salt.length);
+        builder.append_bytes(this.salt);
+    }
+
+    clone(): DNSRR_NSEC3PARAM {
+        return new DNSRR_NSEC3PARAM(this._rr, this.value);
+    }
+}
+
 // Base32hex decode (RFC 4648, used by NSEC3)
 function base32hex_decode(input: string): Uint8Array {
     const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUV';
@@ -662,3 +700,4 @@ register_rr_handler(StringToRRType('RRSIG'), (rr, value) => new RRSig(rr, value)
 register_rr_handler(StringToRRType('DS'), (rr, value) => new DNSRR_DS(rr, value));
 register_rr_handler(StringToRRType('NSEC'), (rr, value) => new DNSRR_NSEC(rr, value));
 register_rr_handler(StringToRRType('NSEC3'), (rr, value) => new DNSRR_NSEC3(rr, value));
+register_rr_handler(StringToRRType('NSEC3PARAM'), (rr, value) => new DNSRR_NSEC3PARAM(rr, value));
