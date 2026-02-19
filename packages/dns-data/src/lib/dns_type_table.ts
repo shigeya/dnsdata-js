@@ -149,7 +149,7 @@ export function RRTypeToString(type: ns_type)
     case 59 /*ns_t_cds*/:	return "CDS";           // Child DS (RFC 7344)
     case 60 /*ns_t_cdnskey*/:	return "CDNSKEY";       // Child DNSKEY (RFC 7344)
     case 61 /*ns_t_openpgpkey*/:return "OPENPGPKEY";   // OpenPGP public key (RFC 7929)
-//     case 62 /*ns_t_csync*/:	return "CSYNC";
+    case 62 /*ns_t_csync*/:	return "CSYNC";         // Child-to-Parent Sync (RFC 7477)
     case 64 /*ns_t_svcb*/:	return "SVCB";          // Service Binding (RFC 9460)
     case 65 /*ns_t_https*/:	return "HTTPS";         // HTTPS Service Binding (RFC 9460)
 //     case 99 /*ns_t_spf*/:	return "SPF";
@@ -244,6 +244,7 @@ export function StringToRRType(str: string) : ns_type
     case "CDS" /*ns_t_cds*/:	return 59;          // Child DS (RFC 7344)
     case "CDNSKEY" /*ns_t_cdnskey*/:	return 60;  // Child DNSKEY (RFC 7344)
     case "OPENPGPKEY" /*ns_t_openpgpkey*/:return 61; // OpenPGP public key (RFC 7929)
+    case "CSYNC" /*ns_t_csync*/:	return 62;  // Child-to-Parent Sync (RFC 7477)
     case "SVCB" /*ns_t_svcb*/:	return 64;          // Service Binding (RFC 9460)
     case "HTTPS" /*ns_t_https*/:	return 65;      // HTTPS Service Binding (RFC 9460)
 //     case 99 /*ns_t_spf*/:	return "SPF";
@@ -337,6 +338,7 @@ export function QTypeValidForRequest(type: ns_type): boolean {
     case 59 /*ns_t_cds*/:
     case 60 /*ns_t_cdnskey*/:
     case 61 /*ns_t_openpgpkey*/:
+    case 62 /*ns_t_csync*/:
     case 64 /*ns_t_svcb*/:
     case 65 /*ns_t_https*/:
     case 108 /*ns_t_eui48*/:
