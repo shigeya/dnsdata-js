@@ -131,7 +131,7 @@ export function RRTypeToString(type: ns_type)
 //     case 38 /*ns_t_a6*/:       return "A6";            // IPv6 address(deprecates AAAA)
     case 39 /*ns_t_dname*/:    return "DNAME";         // Non-terminal DNAME (RFC 6672)
 //     case 40 /*ns_t_sink*/:     return "SINK";          // Kitchen sink (experimentatl)
-//     case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR)
+    case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR, RFC 6891)
 //     case 42 /*ns_t_apl*/:	return "APL";
     case 43 /*ns_t_ds*/:	return "DS";
     case 44 /*ns_t_sshfp*/:	return "SSHFP";         // SSH Fingerprint (RFC 4255)
@@ -226,7 +226,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 38 /*ns_t_a6*/:       return "A6";            // IPv6 address(deprecates AAAA)
     case "DNAME" /*ns_t_dname*/:    return 39;         // Non-terminal DNAME (RFC 6672)
 //     case 40 /*ns_t_sink*/:     return "SINK";          // Kitchen sink (experimentatl)
-//     case 41 /*ns_t_opt*/:      return "OPT";           // EDNS0 option (meta-RR)
+    case "OPT" /*ns_t_opt*/:      return 41;           // EDNS0 option (meta-RR, RFC 6891)
 //     case 42 /*ns_t_apl*/:	return "APL";
     case "DS" /*ns_t_ds*/:	return 43;
     case "SSHFP" /*ns_t_sshfp*/:	return 44;         // SSH Fingerprint (RFC 4255)
