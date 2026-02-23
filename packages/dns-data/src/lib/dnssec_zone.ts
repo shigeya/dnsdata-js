@@ -17,6 +17,7 @@ import './rr/cert_rr'; // Register CERT handler (RFC 4398)
 import './rr/loc_rr'; // Register LOC handler (RFC 1876)
 import './rr/csync_rr'; // Register CSYNC handler (RFC 7477)
 import './rr/naptr_rr'; // Register NAPTR handler (RFC 3403)
+import './rr/uri_rr'; // Register URI handler (RFC 7553)
 
 export enum KeyVerifyMode {
     None = 0,
