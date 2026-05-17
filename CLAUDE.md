@@ -4,34 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-dnsjs is a DNS/DNSSEC protocol implementation library in TypeScript, ported from a C++ reference library (wide-cpp-lib). It is structured as a Lerna monorepo with a single package: `@dnsjs/dns` (located in `packages/dns-data/`).
+dnsdata-js is a DNS/DNSSEC protocol implementation library in TypeScript, ported from a C++ reference library (wide-cpp-lib). It is structured as a Lerna monorepo with a single package: `@dnsdata/core` (located in `packages/core/`). A sibling Go implementation lives in `dnsdata-go`; the `~/.dnsdata/` user-data location is intentionally shared between the two.
 
 ## Build & Test Commands
 
-All commands below run from `packages/dns-data/`:
+All commands below run from `packages/core/`:
 
 ```bash
 # Install dependencies (run from repo root)
-npm install && cd packages/dns-data && npm install
+npm install && cd packages/core && npm install
 
 # Run all tests
-cd packages/dns-data && npx jest
+cd packages/core && npx jest
 
 # Run a single test file
-cd packages/dns-data && npx jest tests/lib/dns_wire.spec.ts
+cd packages/core && npx jest tests/lib/dns_wire.spec.ts
 
 # Compile TypeScript (no build script defined; use tsc directly)
-cd packages/dns-data && npx tsc
+cd packages/core && npx tsc
 
 # Lint
-cd packages/dns-data && npx eslint src/ tests/
+cd packages/core && npx eslint src/ tests/
 ```
 
 The only defined npm script in the package is `test` → `jest`.
 
 ## Architecture
 
-### Package: `@dnsjs/dns` (`packages/dns-data/`)
+### Package: `@dnsdata/core` (`packages/core/`)
 
 Source lives in `src/lib/`, tests in `tests/lib/` (pattern: `*.spec.ts`).
 

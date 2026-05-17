@@ -1,7 +1,7 @@
 {
-  "name": "@dnsjs/dns",
+  "name": "@dnsdata/core",
   "version": "0.0.1",
-  "description": "dnsjs dns core data model",
+  "description": "DNS/DNSSEC core data model and wire format",
   "main": "index.js",
   "scripts": {
     "test": "jest"

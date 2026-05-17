@@ -1,7 +1,8 @@
 // Root Trust Anchors for DNSSEC chain validation
 //
 // Contains built-in IANA root trust anchor data (DS records).
-// External overrides can be stored in ~/.dnsjs/root-anchors.json.
+// External overrides can be stored in ~/.dnsdata/root-anchors.json.
+// This location is shared with sibling implementations (e.g. dnsdata-go).
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -57,7 +58,7 @@ export const BUILTIN_ROOT_ANCHORS: RootAnchors = {
 };
 
 export function getRootAnchorsPath(): string {
-    return path.join(os.homedir(), '.dnsjs', 'root-anchors.json');
+    return path.join(os.homedir(), '.dnsdata', 'root-anchors.json');
 }
 
 export function loadRootAnchors(): LoadedRootAnchors {

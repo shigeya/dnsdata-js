@@ -115,7 +115,7 @@ function addDoHResponseToZone(zone: DNSSecZone, response: DNSResponse): number {
 function loadRootAnchorsToZone(zone: DNSSecZone, details: string[]): RootAnchorDS[] {
     const { anchors, isExternal } = loadRootAnchors();
     if (isExternal) {
-        details.push(`[.] Warning: Using external root anchors from ~/.dnsjs/root-anchors.json (last updated: ${anchors.lastUpdated}, source: ${anchors.source})`);
+        details.push(`[.] Warning: Using external root anchors from ~/.dnsdata/root-anchors.json (last updated: ${anchors.lastUpdated}, source: ${anchors.source})`);
     }
 
     const keyTagInfo = anchors.ds.map(ds => `${ds.keyTag}/${algoName(ds.algorithm)}`).join(', ');

@@ -37,7 +37,7 @@ export function formatOutput(
         ? `DoH (${opts.provider || 'google'})`
         : 'DNS (system resolver)';
 
-    lines.push(`; <<>> dnsjs lookup <<>> ${opts.fqdn} ${opts.rrtype}`);
+    lines.push(`; <<>> dnsdata lookup <<>> ${opts.fqdn} ${opts.rrtype}`);
     lines.push(`;; Method: ${methodDesc}`);
     lines.push(`;; Status: ${rcodeStr}`);
     lines.push('');

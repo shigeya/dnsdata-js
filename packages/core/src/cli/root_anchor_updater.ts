@@ -1,7 +1,7 @@
 // Fetch and update IANA root trust anchors
 //
 // Downloads root-anchors.xml from IANA, parses DS records,
-// fetches root DNSKEY via DoH, and saves to ~/.dnsjs/root-anchors.json.
+// fetches root DNSKEY via DoH, and saves to ~/.dnsdata/root-anchors.json.
 
 import * as https from 'https';
 import { DoHResolver, DoHProvider } from './resolver_doh';
