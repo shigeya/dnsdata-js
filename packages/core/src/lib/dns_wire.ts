@@ -1,5 +1,13 @@
 // Converting between DNS wire format and string(utf)
 
+// RFC 4034 §6.2 canonical-form: lowercase A-Z only, leave everything else
+// (including '_' 0x5F) untouched. The naive `b | 0x20` shortcut also flips
+// bit 5 of '_', corrupting it to 0x7F (DEL) and breaking DKIM / DMARC /
+// TLSA / MTA-STS lookups that rely on underscore-prefixed labels.
+function ascii_to_lower(c: number): number {
+    return (c >= 0x41 && c <= 0x5A) ? c + 0x20 : c;
+}
+
 export function domain_name2wire(domain_name: string): Uint8Array {
     const bytes: number[] = [];
     const d = domain_name;
@@ -13,7 +21,7 @@ export function domain_name2wire(domain_name: string): Uint8Array {
         if (j - i != 0) { // if there is text to copy
             bytes.push(j - i); // length
             for (let k = i; k < j; k++) {
-                bytes.push(d.charCodeAt(k) | 0x20); // lowercase
+                bytes.push(ascii_to_lower(d.charCodeAt(k)));
             }
         }
 
