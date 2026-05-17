@@ -1,16 +1,49 @@
 {
   "name": "@dnsdata/core",
   "version": "0.0.1",
-  "description": "DNS/DNSSEC core data model and wire format",
-  "main": "index.js",
+  "description": "DNS/DNSSEC core data model, wire format, zone parser, and chain verifier",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
   "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
     "test": "jest"
   },
   "keywords": [
-    "DNS"
+    "dns",
+    "dnssec",
+    "zone-file",
+    "wire-format",
+    "rrsig",
+    "dnskey",
+    "doh",
+    "resolver"
   ],
   "author": "Shigeya Suzuki",
-  "license": "ISC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shigeya/dnsdata-js.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/shigeya/dnsdata-js/issues"
+  },
+  "homepage": "https://github.com/shigeya/dnsdata-js#readme",
   "devDependencies": {
     "@types/jest": "^26.0.23",
     "eslint": "^7.25.0",
