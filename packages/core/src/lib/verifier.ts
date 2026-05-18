@@ -21,7 +21,7 @@
 // records, so getting the loop right matters.
 
 import * as crypto from 'crypto';
-import { ResourceRecord } from './dns_zone';
+import { ResourceRecord } from '../zone/dns_zone';
 import { DNSSecZone, KeyVerifyMode } from './dnssec_zone';
 import {
     DNSKey,

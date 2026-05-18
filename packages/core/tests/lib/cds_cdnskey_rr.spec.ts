@@ -1,4 +1,4 @@
-import { ResourceRecord } from '../../src/lib/dns_zone';
+import { ResourceRecord } from '../../src/zone/dns_zone';
 import { DNSRR_DS, DNSKey } from '../../src/lib/dnssec_rr';
 import { StringToRRType, RRTypeToString } from '../../src/types/dns_type_table';
 import { WireBuilder } from '../../src/wire/dns_wire_util';

@@ -9,7 +9,7 @@ export * from './types/dns_type_table';
 export * from './types/algorithm';
 export * from './wire/dns_wire';
 export * from './wire/dns_wire_util';
-export * from './lib/dns_zone';
+export * from './zone/dns_zone';
 export * from './lib/dnssec_key_loader';
 export * from './lib/dnssec_rr';
 export * from './lib/dnssec_zone';

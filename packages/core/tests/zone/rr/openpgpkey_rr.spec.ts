@@ -1,5 +1,5 @@
-import { ResourceRecord } from '../../../src/lib/dns_zone';
-import { DNSRR_OPENPGPKEY } from '../../../src/lib/rr/openpgpkey_rr';
+import { ResourceRecord } from '../../../src/zone/dns_zone';
+import { DNSRR_OPENPGPKEY } from '../../../src/zone/rr/openpgpkey_rr';
 import { StringToRRType, RRTypeToString } from '../../../src/types/dns_type_table';
 import { WireBuilder } from '../../../src/wire/dns_wire_util';
 

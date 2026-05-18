@@ -1,6 +1,6 @@
 // DNS Zone and ResourceRecord tests
 
-import { ResourceRecord, Zone, has_encoder } from "../../src/lib/dns_zone";
+import { ResourceRecord, Zone, has_encoder } from "../../src/zone/dns_zone";
 import { WireBuilder } from "../../src/wire/dns_wire_util";
 import { DNSZoneRDataFormatError } from "../../src/lib/dns_exception";
 

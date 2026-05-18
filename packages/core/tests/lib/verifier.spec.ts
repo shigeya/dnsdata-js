@@ -11,7 +11,7 @@ import * as crypto from 'crypto';
 
 import { DNSSecZone } from '../../src/lib/dnssec_zone';
 import { DNSKey, RRSig } from '../../src/lib/dnssec_rr';
-import { ResourceRecord } from '../../src/lib/dns_zone';
+import { ResourceRecord } from '../../src/zone/dns_zone';
 import { StringToRRType } from '../../src/types/dns_type_table';
 import { RootAnchors } from '../../src/lib/root_anchors';
 import {

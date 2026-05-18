@@ -6,7 +6,7 @@
 // six-state lib/verifier.Result rather than the legacy
 // VerificationResult.
 
-import { ResourceRecord } from '../lib/dns_zone';
+import { ResourceRecord } from '../zone/dns_zone';
 import { RRTypeToString } from '../types/dns_type_table';
 import { Result, AliasStep, KeySummary, DSSummary, ZoneStep } from '../lib/verifier';
 
