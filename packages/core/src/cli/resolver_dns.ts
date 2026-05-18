@@ -1,6 +1,7 @@
 import * as dns from 'dns';
 import { DNSAnswer, DNSResponse, Resolver } from './resolver';
 import { RRTypeToString } from '../lib/dns_type_table';
+import { errCode } from './error_util';
 
 function ensureTrailingDot(name: string): string {
     return name.endsWith('.') ? name : name + '.';
@@ -20,15 +21,13 @@ export class DNSResolver implements Resolver {
         try {
             const answers = await this.resolveByType(name, rrtype, typeName);
             return { status: 0, answers, authority: [] };
-        } catch (err: any) {
-            if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') {
+        } catch (err: unknown) {
+            const code = errCode(err);
+            if (code === 'ENOTFOUND' || code === 'ENODATA') {
                 return { status: 0, answers: [], authority: [] };
             }
-            if (err.code === 'ESERVFAIL') {
+            if (code === 'ESERVFAIL') {
                 return { status: 2, answers: [], authority: [] };
-            }
-            if (err.code === 'ENOTFOUND') {
-                return { status: 3, answers: [], authority: [] };
             }
             throw err;
         }
@@ -76,8 +75,8 @@ export class DNSResolver implements Resolver {
                     `${r.priority} ${r.weight} ${r.port} ${ensureTrailingDot(r.name)}`));
             }
             case 'CAA': {
-                const records = await (this.resolver as any).resolveCaa(name);
-                return records.map((r: any) => makeDNSAnswer(fqdnDot, rrtype,
+                const records = await this.resolver.resolveCaa(name);
+                return records.map(r => makeDNSAnswer(fqdnDot, rrtype,
                     `${r.critical ? 128 : 0} ${r.issue ? 'issue' : r.iodef ? 'iodef' : 'issue'} "${r.issue || r.iodef || ''}"`));
             }
             default:

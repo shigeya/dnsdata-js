@@ -5,7 +5,7 @@
 
 import * as https from 'https';
 import { DoHResolver, DoHProvider } from './resolver_doh';
-import { RRTypeToString, StringToRRType } from '../lib/dns_type_table';
+import { StringToRRType } from '../lib/dns_type_table';
 import {
     RootAnchors,
     RootAnchorDS,
@@ -114,7 +114,7 @@ export async function fetchAndUpdateRootAnchors(dohProvider: DoHProvider): Promi
     console.error(`Found ${dnskeys.length} DNSKEY record(s)`);
 
     // Load current anchors for comparison
-    const { anchors: currentAnchors, isExternal } = loadRootAnchors();
+    const { anchors: currentAnchors } = loadRootAnchors();
 
     const newAnchors: RootAnchors = {
         lastUpdated: new Date().toISOString().slice(0, 10),
