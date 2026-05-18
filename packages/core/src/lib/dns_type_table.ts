@@ -1,5 +1,12 @@
 // Type Table
 
+import {
+    UnknownOpCodeError,
+    UnknownRCodeError,
+    UnknownRRTypeError,
+    UnknownRRClassError,
+} from './dns_exception';
+
 type ns_opcode = number;
 type ns_rcode = number;
 type ns_type = number;
@@ -14,8 +21,8 @@ export function OpCodeToString(opcode: ns_opcode) : string {
         case 4 /* ns_o_notify */ :	return "Notify"; // Zone change notification.
         case 5 /* ns_o_update */ :	return "Update"; // Zone update message.
 
-        default: 
-            throw new RangeError(`OpCodeToString: unknown ns_opcode <${opcode}>`);
+        default:
+            throw new UnknownOpCodeError(opcode, `OpCodeToString: unknown ns_opcode <${opcode}>`);
     }
 }
 export function StringToOpCode(str: string) : ns_opcode {
@@ -27,8 +34,8 @@ export function StringToOpCode(str: string) : ns_opcode {
         case "Notify" /* ns_o_notify */ :	return 4; // Zone change notification.
         case "Update" /* ns_o_update */ :	return 5; // Zone update message.
 
-        default: 
-            throw new RangeError();
+        default:
+            throw new UnknownOpCodeError(str, `StringToOpCode: unknown opcode name "${str}"`);
     }
 }
 
@@ -56,7 +63,7 @@ export function RCodeToString(rcode: ns_rcode) : string {
     case 18 /* ns_r_badtime */:	return "BADTIME";
 
     default:
-        throw new RangeError(`RCodeToString: unknown ns_rcode <${rcode}>`);
+        throw new UnknownRCodeError(rcode, `RCodeToString: unknown ns_rcode <${rcode}>`);
     }
 }
 
@@ -83,7 +90,7 @@ export function StringToRCode(str: string) : ns_rcode {
     case "BADTIME" /* ns_r_badtime */:	return 18;
 
     default:
-        throw new RangeError();
+        throw new UnknownRCodeError(str, `StringToRCode: unknown rcode name "${str}"`);
     }
 }
 
@@ -178,7 +185,7 @@ export function RRTypeToString(type: ns_type)
 //     case 32769 /*ns_t_dlv*/:    return "DLV";
 
     default:
-        throw new RangeError(`RRTypeToString: unknown ns_type: <${type}>`);
+        throw new UnknownRRTypeError(type, `RRTypeToString: unknown ns_type: <${type}>`);
     }
 }
 
@@ -273,7 +280,7 @@ export function StringToRRType(str: string) : ns_type
 //     case 32769 /*ns_t_dlv*/:    return "DLV";
 
     default:
-        throw new RangeError();
+        throw new UnknownRRTypeError(str, `StringToRRType: unknown rrtype name "${str}"`);
     }
 }
 
@@ -289,7 +296,7 @@ export function RRClassToString(klass: ns_class)
     case 254 /*ns_c_none*/:	return "NONE"; // for prereq. sections in update requests
     case 255 /*ns_c_any*/:	return "ANY";           // Wildcard match
     default:
-        throw new RangeError(`RRClassToString: unknown ns_class: <${klass}>`);
+        throw new UnknownRRClassError(klass, `RRClassToString: unknown ns_class: <${klass}>`);
     }
 }
 
@@ -305,7 +312,7 @@ export function StringToRRClass(str: string) : ns_class
     case "NONE" /*ns_c_none*/:	return 254; // for prereq. sections in update requests
     case "ANY" /*ns_c_any*/:	return 255;           // Wildcard match
     default:
-        throw new RangeError();
+        throw new UnknownRRClassError(str, `StringToRRClass: unknown class name "${str}"`);
     }
 }
 export function QTypeValidForRequest(type: ns_type): boolean {

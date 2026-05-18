@@ -12,6 +12,12 @@ import {
     QTypeValidForRequest,
     QClassValidForRequest
 } from "../../src/lib/dns_type_table";
+import {
+    UnknownOpCodeError,
+    UnknownRCodeError,
+    UnknownRRTypeError,
+    UnknownRRClassError,
+} from "../../src/lib/dns_exception";
 
 //
 
@@ -196,5 +202,103 @@ describe("QClassValidForRequest", () => {
         [0, 254, 999].forEach(c => {
             expect(QClassValidForRequest(c)).toBe(false);
         });
+    });
+});
+
+// UF-003: typed enum-classification errors so callers can discriminate
+// "unknown opcode" from "unknown rrtype" via instanceof instead of message
+// matching, and read the offending value off the .value field.
+describe("typed enum errors (UF-003)", () => {
+    it("OpCodeToString throws UnknownOpCodeError with the numeric value", () => {
+        try {
+            OpCodeToString(3);
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownOpCodeError);
+            expect(err).toBeInstanceOf(RangeError); // back-compat
+            expect((err as UnknownOpCodeError).value).toBe(3);
+        }
+    });
+
+    it("StringToOpCode throws UnknownOpCodeError with the string value", () => {
+        try {
+            StringToOpCode("XXX");
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownOpCodeError);
+            expect((err as UnknownOpCodeError).value).toBe("XXX");
+        }
+    });
+
+    it("RCodeToString throws UnknownRCodeError with the numeric value", () => {
+        try {
+            RCodeToString(11);
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRCodeError);
+            expect((err as UnknownRCodeError).value).toBe(11);
+        }
+    });
+
+    it("StringToRCode throws UnknownRCodeError with the string value", () => {
+        try {
+            StringToRCode("XXX");
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRCodeError);
+            expect((err as UnknownRCodeError).value).toBe("XXX");
+        }
+    });
+
+    it("RRTypeToString throws UnknownRRTypeError with the numeric value", () => {
+        try {
+            RRTypeToString(999);
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRRTypeError);
+            expect((err as UnknownRRTypeError).value).toBe(999);
+        }
+    });
+
+    it("StringToRRType throws UnknownRRTypeError with the string value", () => {
+        try {
+            StringToRRType("XXX");
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRRTypeError);
+            expect((err as UnknownRRTypeError).value).toBe("XXX");
+        }
+    });
+
+    it("RRClassToString throws UnknownRRClassError with the numeric value", () => {
+        try {
+            RRClassToString(999);
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRRClassError);
+            expect((err as UnknownRRClassError).value).toBe(999);
+        }
+    });
+
+    it("StringToRRClass throws UnknownRRClassError with the string value", () => {
+        try {
+            StringToRRClass("XXX");
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRRClassError);
+            expect((err as UnknownRRClassError).value).toBe("XXX");
+        }
+    });
+
+    it("distinct categories do not cross-match (RRType vs OpCode)", () => {
+        try {
+            RRTypeToString(999);
+            fail("expected throw");
+        } catch (err) {
+            expect(err).toBeInstanceOf(UnknownRRTypeError);
+            expect(err).not.toBeInstanceOf(UnknownOpCodeError);
+            expect(err).not.toBeInstanceOf(UnknownRCodeError);
+            expect(err).not.toBeInstanceOf(UnknownRRClassError);
+        }
     });
 });
