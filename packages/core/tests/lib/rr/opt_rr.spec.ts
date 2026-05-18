@@ -1,6 +1,6 @@
 import { DNSRR_OPT, EDNS_OPTION_NSID, EDNS_OPTION_COOKIE } from '../../../src/lib/rr/opt_rr';
 import { StringToRRType, RRTypeToString } from '../../../src/types/dns_type_table';
-import { WireBuilder } from '../../../src/lib/dns_wire_util';
+import { WireBuilder } from '../../../src/wire/dns_wire_util';
 
 describe('dns_type_table OPT', () => {
     it('should convert OPT type', () => {

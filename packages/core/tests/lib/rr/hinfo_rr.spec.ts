@@ -1,7 +1,7 @@
 import { ResourceRecord } from '../../../src/lib/dns_zone';
 import { DNSRR_HINFO } from '../../../src/lib/rr/hinfo_rr';
 import { StringToRRType, RRTypeToString } from '../../../src/types/dns_type_table';
-import { WireBuilder } from '../../../src/lib/dns_wire_util';
+import { WireBuilder } from '../../../src/wire/dns_wire_util';
 
 describe('dns_type_table HINFO', () => {
     it('should convert HINFO type', () => {

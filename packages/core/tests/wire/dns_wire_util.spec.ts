@@ -1,6 +1,6 @@
 // WireBuilder tests
 
-import { WireBuilder, compare_uint8arrays } from "../../src/lib/dns_wire_util";
+import { WireBuilder, compare_uint8arrays } from "../../src/wire/dns_wire_util";
 
 describe("WireBuilder", () => {
     it("can append uint8", () => {

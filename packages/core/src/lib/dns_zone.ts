@@ -2,8 +2,8 @@
 //
 // Ported from wide-cpp-lib/wide/dns/dns_zone.hpp / dns_zone.cpp
 
-import { WireBuilder } from './dns_wire_util';
-import { domain_name2wire } from './dns_wire';
+import { WireBuilder } from '../wire/dns_wire_util';
+import { domain_name2wire } from '../wire/dns_wire';
 import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from '../types/dns_type_table';
 import { DNSZoneRDataFormatError } from './dns_exception';
 

@@ -4,7 +4,7 @@
 // Both share identical wire format:
 //   usage(1) + selector(1) + matching_type(1) + certificate_association_data(variable)
 
-import { WireBuilder } from '../dns_wire_util';
+import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';

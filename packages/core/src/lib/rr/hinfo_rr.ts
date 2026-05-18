@@ -8,7 +8,7 @@
 // Presentation format: CPU OS (quoted strings allowed)
 //   e.g. "INTEL-386" "UNIX"  or  INTEL-386 UNIX
 
-import { WireBuilder } from '../dns_wire_util';
+import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';

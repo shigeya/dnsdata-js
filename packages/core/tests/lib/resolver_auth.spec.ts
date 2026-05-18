@@ -13,7 +13,7 @@ import {
     AuthResponseError,
     normalize_addr,
 } from '../../src/lib/resolver_auth';
-import { domain_name2wire, build_query_with_id } from '../../src/lib/dns_wire';
+import { domain_name2wire, build_query_with_id } from '../../src/wire/dns_wire';
 
 const TYPE_A = 1;
 const TYPE_DNSKEY = 48;

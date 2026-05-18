@@ -1,7 +1,7 @@
 import { ResourceRecord } from '../../../src/lib/dns_zone';
 import { DNSRR_LOC } from '../../../src/lib/rr/loc_rr';
 import { StringToRRType, RRTypeToString } from '../../../src/types/dns_type_table';
-import { WireBuilder } from '../../../src/lib/dns_wire_util';
+import { WireBuilder } from '../../../src/wire/dns_wire_util';
 
 describe('dns_type_table LOC', () => {
     it('should convert LOC type', () => {

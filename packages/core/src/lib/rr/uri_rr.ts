@@ -12,7 +12,7 @@
 // Example:
 //   _http._tcp.example.com.  IN  URI  10 1 "http://www.example.com/path"
 
-import { WireBuilder } from '../dns_wire_util';
+import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';

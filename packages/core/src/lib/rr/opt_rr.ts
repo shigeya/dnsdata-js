@@ -17,7 +17,7 @@
 //
 // RFC 6891 §6.1.4: Only one OPT record is allowed per DNS message.
 
-import { WireBuilder } from '../dns_wire_util';
+import { WireBuilder } from '../../wire/dns_wire_util';
 
 // RFC 6891 §6.1.2: EDNS option code/data pair
 export interface EDNSOption {

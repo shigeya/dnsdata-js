@@ -1,7 +1,7 @@
 import { ResourceRecord } from '../../../src/lib/dns_zone';
 import { DNSRR_TLSA, DNSRR_SMIMEA } from '../../../src/lib/rr/dane_rr';
 import { StringToRRType, RRTypeToString } from '../../../src/types/dns_type_table';
-import { WireBuilder } from '../../../src/lib/dns_wire_util';
+import { WireBuilder } from '../../../src/wire/dns_wire_util';
 
 describe('dns_type_table DANE types', () => {
     it('should convert TLSA type', () => {

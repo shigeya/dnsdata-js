@@ -13,7 +13,7 @@
 // Presentation format: SOA_serial flags type-list
 //   e.g.  66 3 A NS AAAA
 
-import { WireBuilder } from '../dns_wire_util';
+import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 // RFC 7477 §2: Type Bit Map uses same encoding as NSEC (RFC 4034 §4.1.2).

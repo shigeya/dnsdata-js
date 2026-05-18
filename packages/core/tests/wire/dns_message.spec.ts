@@ -4,7 +4,7 @@
 // recovers the structured shape (including compression-pointer
 // follow-through for the answer-section owner name).
 
-import { parse_message, Header } from '../../src/lib/dns_message';
+import { parse_message, Header } from '../../src/wire/dns_message';
 import { DNSMessageMalformedError } from '../../src/lib/dns_exception';
 
 // Helper: assemble a Uint8Array from a list of byte arrays / numbers.

@@ -12,7 +12,7 @@
 // file to update.
 
 import { parse_domain_name } from './dns_wire';
-import { DNSMessageMalformedError } from './dns_exception';
+import { DNSMessageMalformedError } from '../lib/dns_exception';
 
 // 12-byte fixed-shape DNS message header (RFC 1035 §4.1.1).
 // Flag-field bit positions per RFC 1035 §4.1.1 and RFC 4035 §3.

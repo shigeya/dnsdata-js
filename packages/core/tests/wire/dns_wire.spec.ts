@@ -7,7 +7,7 @@ import {
     build_query,
     build_query_with_id,
     random_query_id,
-} from "../../src/lib/dns_wire";
+} from "../../src/wire/dns_wire";
 import {
     DNSWireError,
     DNSWirePointerLoopError,

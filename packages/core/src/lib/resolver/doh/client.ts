@@ -18,7 +18,7 @@
 // stdout / stderr. All filesystem and logging concerns are the
 // caller's responsibility.
 
-import { build_query } from '../../dns_wire';
+import { build_query } from '../../../wire/dns_wire';
 import {
     DoHAllProvidersFailedError,
     DoHError,

@@ -2,7 +2,7 @@
 
 import { DNSKey, RRSig, DNSRR_DS, DNSRR_NSEC, DNSRR_NSEC3 } from "../../src/lib/dnssec_rr";
 import { ResourceRecord } from "../../src/lib/dns_zone";
-import { WireBuilder } from "../../src/lib/dns_wire_util";
+import { WireBuilder } from "../../src/wire/dns_wire_util";
 
 describe("DNSKey", () => {
     // Example DNSKEY from RFC4034 style

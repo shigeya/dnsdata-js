@@ -12,8 +12,8 @@
 // Used for DDDS (Dynamic Delegation Discovery System) applications
 // including ENUM (E.164 to URI mapping) and SIP.
 
-import { WireBuilder } from '../dns_wire_util';
-import { domain_name2wire } from '../dns_wire';
+import { WireBuilder } from '../../wire/dns_wire_util';
+import { domain_name2wire } from '../../wire/dns_wire';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';

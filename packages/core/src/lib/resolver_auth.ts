@@ -19,9 +19,9 @@
 
 import * as dgram from 'dgram';
 import * as net from 'net';
-import { build_query_with_id, random_query_id } from './dns_wire';
-import { parse_message, RawRR } from './dns_message';
-import { rdata_to_string } from './rdata_decoder';
+import { build_query_with_id, random_query_id } from '../wire/dns_wire';
+import { parse_message, RawRR } from '../wire/dns_message';
+import { rdata_to_string } from '../wire/rdata_decoder';
 import { ResourceRecord, ns_type, ns_class } from './dns_zone';
 import { RRTypeToString, RRClassToString } from '../types/dns_type_table';
 

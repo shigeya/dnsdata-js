@@ -6,7 +6,7 @@
 // Algorithm numbers: 1=RSA, 2=DSS, 3=ECDSA (RFC 6594), 4=Ed25519 (RFC 7479)
 // Fingerprint types: 1=SHA-1, 2=SHA-256 (RFC 6594)
 
-import { WireBuilder } from '../dns_wire_util';
+import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';

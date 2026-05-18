@@ -10,8 +10,8 @@
 // Presentation format: mbox-dname txt-dname
 //   e.g.  admin.example.com. devnull.example.com.
 
-import { WireBuilder } from '../dns_wire_util';
-import { domain_name2wire } from '../dns_wire';
+import { WireBuilder } from '../../wire/dns_wire_util';
+import { domain_name2wire } from '../../wire/dns_wire';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';

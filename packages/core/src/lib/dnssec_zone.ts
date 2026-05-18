@@ -2,8 +2,8 @@
 //
 // Ported from wide-cpp-lib/wide/dns/dnssec_zone.hpp / dnssec_zone.cpp
 
-import { WireBuilder, compare_uint8arrays } from './dns_wire_util';
-import { domain_name2wire } from './dns_wire';
+import { WireBuilder, compare_uint8arrays } from '../wire/dns_wire_util';
+import { domain_name2wire } from '../wire/dns_wire';
 import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';

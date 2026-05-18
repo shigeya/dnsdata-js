@@ -7,8 +7,8 @@
 // use a compression pointer, so the (msg, rdataStart) plumbing is
 // exercised rather than just the in-rdata path.
 
-import { rdata_to_string, rfc3597 } from '../../src/lib/rdata_decoder';
-import { parse_message } from '../../src/lib/dns_message';
+import { rdata_to_string, rfc3597 } from '../../src/wire/rdata_decoder';
+import { parse_message } from '../../src/wire/dns_message';
 import { StringToRRType } from '../../src/types/dns_type_table';
 import { DNSRDataDecodeError } from '../../src/lib/dns_exception';
 

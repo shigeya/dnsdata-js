@@ -12,8 +12,8 @@ import { DoHResponseError } from '../../../../src/lib/resolver/doh/errors';
 // DoHClient.prototype.resolve. The barrel does it too — this spec
 // imports it directly so the test exercises the file under test.
 import '../../../../src/lib/resolver/doh/resolve';
-import { domain_name2wire } from '../../../../src/lib/dns_wire';
-import { WireBuilder } from '../../../../src/lib/dns_wire_util';
+import { domain_name2wire } from '../../../../src/wire/dns_wire';
+import { WireBuilder } from '../../../../src/wire/dns_wire_util';
 
 const TYPE_A = 1;
 const TYPE_NS = 2;
