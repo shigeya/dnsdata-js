@@ -24,6 +24,9 @@ import {
     VerifierChainTimeoutError,
     descendant_zones,
     normalize_qname,
+    combine_verdicts,
+    synthesise_dname_target,
+    MAX_ALIAS_HOPS,
 } from '../../src/lib/verifier';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
@@ -501,3 +504,251 @@ function find_with_sigs(z: DNSSecZone, name: string, qtype: number): ResourceRec
     }
     return out;
 }
+
+//////////////////////////////////////////////////////////// alias chasing
+
+const TYPE_CNAME = StringToRRType('CNAME');
+const TYPE_DNAME = StringToRRType('DNAME');
+
+describe('combine_verdicts', () => {
+    it('Bogus dominates everything', () => {
+        for (const v of [Verdict.Indeterminate, Verdict.Secure, Verdict.SecureNoData, Verdict.SecureNXDomain, Verdict.Insecure, Verdict.Bogus]) {
+            expect(combine_verdicts(Verdict.Bogus, v)).toBe(Verdict.Bogus);
+            expect(combine_verdicts(v, Verdict.Bogus)).toBe(Verdict.Bogus);
+        }
+    });
+
+    it('Insecure beats Indeterminate and Secure flavours', () => {
+        expect(combine_verdicts(Verdict.Insecure, Verdict.Secure)).toBe(Verdict.Insecure);
+        expect(combine_verdicts(Verdict.Insecure, Verdict.SecureNoData)).toBe(Verdict.Insecure);
+        expect(combine_verdicts(Verdict.Indeterminate, Verdict.Insecure)).toBe(Verdict.Insecure);
+    });
+
+    it('Indeterminate beats Secure', () => {
+        expect(combine_verdicts(Verdict.Indeterminate, Verdict.Secure)).toBe(Verdict.Indeterminate);
+        expect(combine_verdicts(Verdict.Secure, Verdict.Indeterminate)).toBe(Verdict.Indeterminate);
+    });
+
+    it('preserves the more specific Secure flavour', () => {
+        expect(combine_verdicts(Verdict.Secure, Verdict.SecureNoData)).toBe(Verdict.SecureNoData);
+        expect(combine_verdicts(Verdict.SecureNXDomain, Verdict.Secure)).toBe(Verdict.SecureNXDomain);
+    });
+});
+
+describe('synthesise_dname_target', () => {
+    it('rewrites strict-suffix labels under owner with target', () => {
+        expect(synthesise_dname_target('foo.bar.example.com.', 'example.com.', 'elsewhere.net.'))
+            .toBe('foo.bar.elsewhere.net.');
+    });
+
+    it('returns "" for qname equal to owner (RFC 6672 §3.1)', () => {
+        expect(synthesise_dname_target('example.com.', 'example.com.', 'elsewhere.net.')).toBe('');
+    });
+
+    it('returns "" when qname does not end with owner', () => {
+        expect(synthesise_dname_target('foo.bar.example.org.', 'example.com.', 'elsewhere.net.')).toBe('');
+    });
+
+    it('is case-insensitive on the owner suffix', () => {
+        expect(synthesise_dname_target('Foo.Example.COM.', 'EXAMPLE.com.', 'elsewhere.net.'))
+            .toBe('foo.elsewhere.net.');
+    });
+});
+
+describe('Verifier alias chasing (UP-005 / #9)', () => {
+    it('follows a single CNAME hop and records it in result.aliases', async () => {
+        // Two-level chain: root → example. is signed. www.example.
+        // CNAMEs to host.example.; host.example. has the A record.
+        const root = make_zone('.');
+        const example = make_zone('example.');
+        delegate(root, example);
+
+        add_signed(example, 'www.example.', 'CNAME', 'host.example.');
+        add_signed(example, 'host.example.', 'A', '192.0.2.1');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('example.', TYPE_DS), find_with_sigs(root.zone, 'example.', TYPE_DS)],
+            [key('example.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.', TYPE_DNSKEY)],
+            // CNAME is at www.example. — answer the A query with CNAME +
+            // its RRSIG.
+            [key('www.example.', TYPE_A), find_with_sigs(example.zone, 'www.example.', TYPE_CNAME)],
+            [key('www.example.', TYPE_DS), []],
+            [key('host.example.', TYPE_DS), []],
+            [key('host.example.', TYPE_A), find_with_sigs(example.zone, 'host.example.', TYPE_A)],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('www.example.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Secure);
+        expect(result.aliases).toBeDefined();
+        expect(result.aliases!.length).toBe(1);
+        expect(result.aliases![0]).toEqual({
+            type:    'cname',
+            from:    'www.example.',
+            target:  'host.example.',
+            zone:    'example.',
+            verdict: Verdict.Secure,
+        });
+    });
+
+    it('chases a two-step CNAME chain and worst-of combines per hop', async () => {
+        // a → b → c, c is Secure. Final verdict Secure; aliases has 2.
+        const root = make_zone('.');
+        const example = make_zone('example.');
+        delegate(root, example);
+
+        add_signed(example, 'a.example.', 'CNAME', 'b.example.');
+        add_signed(example, 'b.example.', 'CNAME', 'c.example.');
+        add_signed(example, 'c.example.', 'A', '192.0.2.3');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('example.', TYPE_DS), find_with_sigs(root.zone, 'example.', TYPE_DS)],
+            [key('example.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.', TYPE_DNSKEY)],
+            [key('a.example.', TYPE_A), find_with_sigs(example.zone, 'a.example.', TYPE_CNAME)],
+            [key('a.example.', TYPE_DS), []],
+            [key('b.example.', TYPE_A), find_with_sigs(example.zone, 'b.example.', TYPE_CNAME)],
+            [key('b.example.', TYPE_DS), []],
+            [key('c.example.', TYPE_A), find_with_sigs(example.zone, 'c.example.', TYPE_A)],
+            [key('c.example.', TYPE_DS), []],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('a.example.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Secure);
+        expect(result.aliases!.map(a => `${a.from}→${a.target}`)).toEqual([
+            'a.example.→b.example.',
+            'b.example.→c.example.',
+        ]);
+    });
+
+    it('synthesises DNAME targets and follows them', async () => {
+        // DNAME at "old.example." → "new.example.": a query for
+        // "x.old.example." should be rewritten to "x.new.example.".
+        const root = make_zone('.');
+        const example = make_zone('example.');
+        delegate(root, example);
+
+        add_signed(example, 'old.example.', 'DNAME', 'new.example.');
+        add_signed(example, 'x.new.example.', 'A', '192.0.2.7');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('example.', TYPE_DS), find_with_sigs(root.zone, 'example.', TYPE_DS)],
+            [key('example.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.', TYPE_DNSKEY)],
+            // The A query at the original qname returns the DNAME at
+            // its ancestor "old.example.".
+            [key('x.old.example.', TYPE_A), find_with_sigs(example.zone, 'old.example.', TYPE_DNAME)],
+            [key('x.old.example.', TYPE_DS), []],
+            [key('old.example.', TYPE_DS), []],
+            [key('x.new.example.', TYPE_DS), []],
+            [key('new.example.', TYPE_DS), []],
+            [key('x.new.example.', TYPE_A), find_with_sigs(example.zone, 'x.new.example.', TYPE_A)],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('x.old.example.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Secure);
+        expect(result.aliases!.length).toBe(1);
+        expect(result.aliases![0].type).toBe('dname');
+        expect(result.aliases![0].from).toBe('x.old.example.');
+        expect(result.aliases![0].target).toBe('x.new.example.');
+    });
+
+    it('detects a CNAME ping-pong loop as Bogus', async () => {
+        // a → b → a → … — loop after one round-trip. validate should
+        // detect the repeat and return Bogus rather than spin to the
+        // hop cap.
+        const root = make_zone('.');
+        const example = make_zone('example.');
+        delegate(root, example);
+
+        add_signed(example, 'a.example.', 'CNAME', 'b.example.');
+        add_signed(example, 'b.example.', 'CNAME', 'a.example.');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('example.', TYPE_DS), find_with_sigs(root.zone, 'example.', TYPE_DS)],
+            [key('example.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.', TYPE_DNSKEY)],
+            [key('a.example.', TYPE_A), find_with_sigs(example.zone, 'a.example.', TYPE_CNAME)],
+            [key('a.example.', TYPE_DS), []],
+            [key('b.example.', TYPE_A), find_with_sigs(example.zone, 'b.example.', TYPE_CNAME)],
+            [key('b.example.', TYPE_DS), []],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('a.example.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Bogus);
+        expect(result.bogusReason).toMatch(/alias loop/);
+        // We followed at least one hop before detecting the loop.
+        expect(result.aliases!.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Bogus from a tampered CNAME signature dominates the final verdict', async () => {
+        // www → host (CNAME signed) → host's A is fine. Tamper the
+        // CNAME RRSIG so the alias hop itself goes Bogus. Worst-of
+        // says the chain is Bogus even if the target would have been
+        // Secure on its own.
+        const root = make_zone('.');
+        const example = make_zone('example.');
+        delegate(root, example);
+        add_signed(example, 'www.example.', 'CNAME', 'host.example.');
+        add_signed(example, 'host.example.', 'A', '192.0.2.1');
+
+        // Wreck the CNAME's RRSIG by overwriting its signature with
+        // zeros (matches the leaf-RRSIG-bogus test pattern).
+        const legitSig = example.zone.find_rrset('www.example.', TYPE_RRSIG)[0];
+        const sigHandler = legitSig.get_handler() as RRSig;
+        const garbage = Buffer.alloc(sigHandler.signature.length).toString('base64');
+        const tamperedValue = `CNAME ${sigHandler.algorithm} ${sigHandler.labels} 3600 ${sigHandler.expire} ${sigHandler.inception} ${sigHandler.key_tag} ${sigHandler.signer} ${garbage}`;
+        const tamperedZone = example.zone as unknown as { records: Map<string, ResourceRecord[]> };
+        tamperedZone.records.set(`www.example.\0${TYPE_RRSIG}`, [new ResourceRecord('www.example.', 3600, 'IN', 'RRSIG', tamperedValue)]);
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('example.', TYPE_DS), find_with_sigs(root.zone, 'example.', TYPE_DS)],
+            [key('example.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.', TYPE_DNSKEY)],
+            [key('www.example.', TYPE_A), find_with_sigs(example.zone, 'www.example.', TYPE_CNAME)],
+            [key('www.example.', TYPE_DS), []],
+            [key('host.example.', TYPE_A), find_with_sigs(example.zone, 'host.example.', TYPE_A)],
+            [key('host.example.', TYPE_DS), []],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('www.example.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Bogus);
+        expect(result.bogusReason).toMatch(/CNAME/);
+    });
+
+    it('returns Bogus when the alias chain exceeds MAX_ALIAS_HOPS', async () => {
+        // Build a strictly forward chain longer than MAX_ALIAS_HOPS by
+        // emitting CNAMEs n0 → n1 → … → n<MAX_ALIAS_HOPS+2>. Each step
+        // is a fresh qname so the loop-detection set never triggers;
+        // the hop cap is what should fire.
+        const root = make_zone('.');
+        const example = make_zone('example.');
+        delegate(root, example);
+
+        const chain_len = MAX_ALIAS_HOPS + 2;
+        for (let i = 0; i < chain_len; i++) {
+            add_signed(example, `n${i}.example.`, 'CNAME', `n${i + 1}.example.`);
+        }
+
+        const entries: [string, ResourceRecord[]][] = [
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('example.', TYPE_DS), find_with_sigs(root.zone, 'example.', TYPE_DS)],
+            [key('example.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.', TYPE_DNSKEY)],
+        ];
+        for (let i = 0; i < chain_len; i++) {
+            entries.push([key(`n${i}.example.`, TYPE_A), find_with_sigs(example.zone, `n${i}.example.`, TYPE_CNAME)]);
+            entries.push([key(`n${i}.example.`, TYPE_DS), []]);
+        }
+        const resolver = new MapResolver(entries);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('n0.example.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Bogus);
+        expect(result.bogusReason).toMatch(new RegExp(`${MAX_ALIAS_HOPS}`));
+    });
+});
