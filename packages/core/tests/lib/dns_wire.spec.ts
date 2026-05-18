@@ -1,6 +1,13 @@
 // Spec on: Converting between DNS wire format and string(utf)
 
-import { domain_name2wire, wire2domain_name, parse_domain_name } from "../../src/lib/dns_wire";
+import {
+    domain_name2wire,
+    wire2domain_name,
+    parse_domain_name,
+    build_query,
+    build_query_with_id,
+    random_query_id,
+} from "../../src/lib/dns_wire";
 import {
     DNSWireError,
     DNSWirePointerLoopError,
@@ -241,5 +248,87 @@ describe("Domain name wire format conversion library", () => {
             const msg = new Uint8Array([0x05, 0x61, 0x62, 0x63]);
             expect(() => parse_domain_name(msg, 0)).toThrow(DNSWireError);
         });
+    });
+});
+
+// build_query / random_query_id (ports dnsdata-go wire.BuildQuery /
+// RandomQueryID; tracked as UP-003 / #7). The exact byte layout
+// matters because the same query function feeds both DoH and the
+// plain UDP / TCP resolver_auth client.
+describe("build_query (UP-003)", () => {
+    const TYPE_A = 1;
+    const TYPE_DNSKEY = 48;
+
+    it("builds a header with RD and one OPT (ARCOUNT=1)", () => {
+        const msg = build_query_with_id(0x4242, "example.com.", TYPE_A);
+        // Header is 12 bytes.
+        expect(msg.length).toBeGreaterThan(12);
+        // ID.
+        expect((msg[0] << 8) | msg[1]).toBe(0x4242);
+        // Flags: only RD bit set (0x0100).
+        expect((msg[2] << 8) | msg[3]).toBe(0x0100);
+        // QDCOUNT=1, ANCOUNT=0, NSCOUNT=0, ARCOUNT=1.
+        expect((msg[4] << 8) | msg[5]).toBe(1);
+        expect((msg[6] << 8) | msg[7]).toBe(0);
+        expect((msg[8] << 8) | msg[9]).toBe(0);
+        expect((msg[10] << 8) | msg[11]).toBe(1);
+    });
+
+    it("encodes the question and EDNS(0) OPT pseudo-RR", () => {
+        const msg = build_query_with_id(0x1234, "example.com.", TYPE_DNSKEY);
+        const qname = domain_name2wire("example.com.");
+        // Question begins at offset 12: name | qtype | qclass.
+        expect(msg.subarray(12, 12 + qname.length)).toEqual(qname);
+        const qtype_off = 12 + qname.length;
+        expect((msg[qtype_off] << 8) | msg[qtype_off + 1]).toBe(TYPE_DNSKEY);
+        // QCLASS = IN = 1.
+        expect((msg[qtype_off + 2] << 8) | msg[qtype_off + 3]).toBe(1);
+        // OPT pseudo-RR starts right after the question.
+        const opt_off = qtype_off + 4;
+        expect(msg[opt_off]).toBe(0x00); // root name
+        expect((msg[opt_off + 1] << 8) | msg[opt_off + 2]).toBe(41); // TYPE OPT
+        expect((msg[opt_off + 3] << 8) | msg[opt_off + 4]).toBe(4096); // CLASS = payload size
+        // TTL contains the DO bit (0x00008000).
+        const ttl =
+            (msg[opt_off + 5] << 24) |
+            (msg[opt_off + 6] << 16) |
+            (msg[opt_off + 7] << 8) |
+            msg[opt_off + 8];
+        expect(ttl >>> 0).toBe(0x00008000);
+        // RDLEN = 0.
+        expect((msg[opt_off + 9] << 8) | msg[opt_off + 10]).toBe(0);
+        // No bytes past the OPT.
+        expect(msg.length).toBe(opt_off + 11);
+    });
+
+    it("accepts a qname missing the trailing dot", () => {
+        const a = build_query_with_id(1, "example.com", TYPE_A);
+        const b = build_query_with_id(1, "example.com.", TYPE_A);
+        expect(a).toEqual(b);
+    });
+
+    it("rejects an oversized label", () => {
+        const too_long = "a".repeat(64);
+        expect(() => build_query(`${too_long}.example.com.`, TYPE_A)).toThrow(DNSWireError);
+    });
+
+    it("randomises the transaction ID across calls", () => {
+        // The chance of two random uint16s coinciding is 1/65536; pulling
+        // four samples drops the all-collision probability into the
+        // negligible range.
+        const ids = new Set<number>();
+        for (let i = 0; i < 4; i++) {
+            ids.add((build_query("example.com.", TYPE_A)[0] << 8) | build_query("example.com.", TYPE_A)[1]);
+        }
+        expect(ids.size).toBeGreaterThan(1);
+    });
+
+    it("random_query_id returns a uint16 value", () => {
+        for (let i = 0; i < 20; i++) {
+            const id = random_query_id();
+            expect(id).toBeGreaterThanOrEqual(0);
+            expect(id).toBeLessThanOrEqual(0xFFFF);
+            expect(Number.isInteger(id)).toBe(true);
+        }
     });
 });

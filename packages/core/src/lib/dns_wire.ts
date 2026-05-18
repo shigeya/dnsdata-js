@@ -1,5 +1,6 @@
 // Converting between DNS wire format and string(utf)
 
+import { randomBytes } from 'crypto';
 import {
     DNSWireError,
     DNSWirePointerLoopError,
@@ -175,6 +176,83 @@ export function parse_domain_name(msg: Uint8Array, offset: number): ParsedDomain
 function assemble_name(labels: string[]): string {
     if (labels.length === 0) return '.';
     return labels.join('.') + '.';
+}
+
+// DNS message header flag bits used by build_query. Layout from
+// RFC 1035 §4.1.1; the EDNS-DO bit per RFC 3225 lives in the OPT TTL
+// field.
+const FLAG_RD = 0x0100;
+
+// OPT pseudo-RR constants for the EDNS(0) record built into every
+// query. Mirrors dnsdata-go wire/query.go so DoH and plain DNS share
+// the same query shape.
+const OPT_TYPE = 41;          // IANA OPT pseudo-RR type (RFC 6891 §6.1.2)
+const UDP_PAYLOAD_SIZE = 4096; // OPT.CLASS — RFC 6891 §6.1.2
+const DO_BIT = 0x8000;         // DNSSEC OK flag (RFC 3225 §3 / RFC 6891 §6.1.3)
+const CLASS_IN = 1;
+
+// random_query_id draws a cryptographically random uint16 for use as
+// the DNS transaction ID. Used by resolver/auth (and any caller that
+// composes build_query_with_id with a separately-tracked ID for
+// response correlation).
+//
+// Ports the dnsdata-go `wire.RandomQueryID` function (UP-003).
+export function random_query_id(): number {
+    const b = randomBytes(2);
+    return (b[0] << 8) | b[1];
+}
+
+// ensure_fqdn appends a trailing dot when the caller didn't. An empty
+// string encodes as the root label.
+function ensure_fqdn(name: string): string {
+    if (name === '') return '.';
+    if (name[name.length - 1] === '.') return name;
+    return name + '.';
+}
+
+// build_query constructs a DNS query message for (qname, qtype) in
+// class IN with the RD bit set and an EDNS(0) OPT pseudo-RR in the
+// additional section carrying the DO bit. The same wire format works
+// for DoH (RFC 8484) and plain UDP / TCP DNS (RFC 1035).
+//
+// Ports the dnsdata-go `wire.BuildQuery` function (UP-003).
+export function build_query(qname: string, qtype: number): Uint8Array {
+    return build_query_with_id(random_query_id(), qname, qtype);
+}
+
+// build_query_with_id is the deterministic variant of build_query —
+// tests and protocols that need to correlate a specific transaction
+// ID with a response set it explicitly.
+export function build_query_with_id(id: number, qname: string, qtype: number): Uint8Array {
+    const name_wire = domain_name2wire(ensure_fqdn(qname));
+
+    // Header (12 bytes): id, flags, qd=1, an=0, ns=0, ar=1 (the OPT).
+    // Question (name + qtype + qclass): name_wire.length + 4.
+    // OPT pseudo-RR (root + type + class + ttl + rdlen): 11 bytes.
+    const buf = new Uint8Array(12 + name_wire.length + 4 + 11);
+    const view = new DataView(buf.buffer);
+    let p = 0;
+    view.setUint16(p, id);          p += 2;
+    view.setUint16(p, FLAG_RD);     p += 2;
+    view.setUint16(p, 1);           p += 2; // QDCOUNT
+    view.setUint16(p, 0);           p += 2; // ANCOUNT
+    view.setUint16(p, 0);           p += 2; // NSCOUNT
+    view.setUint16(p, 1);           p += 2; // ARCOUNT (one OPT)
+
+    // Question: name + qtype + qclass(IN).
+    buf.set(name_wire, p);          p += name_wire.length;
+    view.setUint16(p, qtype);       p += 2;
+    view.setUint16(p, CLASS_IN);    p += 2;
+
+    // EDNS(0) OPT pseudo-RR: root name (0x00) + type(41) + class(payload size)
+    //                       + ttl(DO bit) + rdlen(0).
+    buf[p] = 0x00;                  p += 1;
+    view.setUint16(p, OPT_TYPE);    p += 2;
+    view.setUint16(p, UDP_PAYLOAD_SIZE); p += 2;
+    view.setUint32(p, DO_BIT);      p += 4;
+    view.setUint16(p, 0);           p += 2;
+
+    return buf;
 }
 
 export function wire2domain_name(wire: Uint8Array): string {
