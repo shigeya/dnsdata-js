@@ -1,6 +1,10 @@
 // Converting between DNS wire format and string(utf)
 
-import { DNSWireError } from './dns_exception';
+import {
+    DNSWireError,
+    DNSWirePointerLoopError,
+    DNSWirePointerForwardError,
+} from './dns_exception';
 
 // RFC 1035 §2.3.4 size limits.
 const MAX_LABEL_LENGTH = 63;
@@ -62,6 +66,115 @@ export function domain_name2wire(domain_name: string): Uint8Array {
     }
 
     return new Uint8Array(bytes);
+}
+
+// parse_domain_name decodes a possibly-compressed DNS name from msg
+// starting at offset. It returns the decoded name (terminated by a
+// trailing ".") and the offset of the first byte immediately after
+// the name *as it appears at offset* — i.e. compression pointers do
+// not advance the cursor past the pointer target, only past the
+// pointer bytes themselves.
+//
+// RFC 1035 §4.1.4 compliance:
+//   - Pointers MUST point strictly earlier in the message; a pointer
+//     to its own position or later raises DNSWirePointerForwardError
+//     (the common malicious-input shape).
+//   - Length octets 0x40 / 0x80 (reserved extended-label types) are
+//     rejected, matching wire2domain_name's behaviour.
+//   - Labels exceeding 63 octets are rejected.
+//   - The pointer chain is cycle-detected via a `visited` set AND
+//     capped at MAX_POINTER_HOPS, so pathological inputs abort fast.
+//
+// Names are returned in their original case as they appear on the
+// wire (no lowercasing). Callers that need a canonical form should
+// apply their own normalisation.
+//
+// Ports the dnsdata-go `wire.ParseDomainName` function (originated
+// in dnsdata-go v0.1.0; see UPSTREAM_FEEDBACK.md UP-002).
+const MAX_POINTER_HOPS = 32;
+
+export interface ParsedDomainName {
+    name: string;
+    // Offset of the first byte immediately after the name encoding
+    // *as it appeared at the original offset*. Compression pointers
+    // advance this by 2 bytes regardless of how long the pointed-to
+    // name is.
+    next: number;
+}
+
+export function parse_domain_name(msg: Uint8Array, offset: number): ParsedDomainName {
+    if (offset < 0 || offset >= msg.length) {
+        throw new DNSWireError(`truncated: offset ${offset} out of bounds (len=${msg.length})`);
+    }
+
+    const labels: string[] = [];
+    let pos = offset;
+    let next = -1;
+    const visited = new Set<number>();
+    let hops = 0;
+
+    for (;;) {
+        if (pos >= msg.length) {
+            throw new DNSWireError(`truncated: at offset ${pos}`);
+        }
+        const b = msg[pos];
+
+        if (b === 0) {
+            pos++;
+            if (next < 0) next = pos;
+            return { name: assemble_name(labels), next };
+        }
+
+        if ((b & 0xC0) === 0xC0) {
+            if (pos + 1 >= msg.length) {
+                throw new DNSWireError(`truncated: pointer at offset ${pos}`);
+            }
+            const ptr = ((b & 0x3F) << 8) | msg[pos + 1];
+            if (ptr >= pos) {
+                throw new DNSWirePointerForwardError(
+                    `pointer 0x${ptr.toString(16).padStart(4, '0')} at offset ${pos} does not point earlier`,
+                );
+            }
+            if (next < 0) next = pos + 2;
+            if (visited.has(ptr)) {
+                throw new DNSWirePointerLoopError(`revisit 0x${ptr.toString(16).padStart(4, '0')}`);
+            }
+            visited.add(ptr);
+            hops++;
+            if (hops > MAX_POINTER_HOPS) {
+                throw new DNSWirePointerLoopError(`too many pointer hops (>${MAX_POINTER_HOPS})`);
+            }
+            pos = ptr;
+            continue;
+        }
+
+        if ((b & 0xC0) !== 0) {
+            // 0x40 / 0x80 prefixes are reserved (extended label types).
+            throw new DNSWireError(
+                `invalid label length byte 0x${b.toString(16).padStart(2, '0')} at offset ${pos}`,
+            );
+        }
+
+        const length = b;
+        if (length > MAX_LABEL_LENGTH) {
+            throw new DNSWireError(`label length ${length} at offset ${pos} exceeds ${MAX_LABEL_LENGTH}`);
+        }
+        pos++;
+        if (pos + length > msg.length) {
+            throw new DNSWireError(`truncated: label of ${length} octets at offset ${pos}`);
+        }
+        let label = '';
+        for (let k = 0; k < length; k++) {
+            label += String.fromCharCode(msg[pos + k]);
+        }
+        labels.push(label);
+        pos += length;
+    }
+}
+
+function assemble_name(labels: string[]): string {
+    if (labels.length === 0) return '.';
+    return labels.join('.') + '.';
 }
 
 export function wire2domain_name(wire: Uint8Array): string {
