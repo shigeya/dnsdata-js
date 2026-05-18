@@ -1,9 +1,10 @@
 import { DNSSecZone, KeyVerifyMode } from '../lib/dnssec_zone';
 import { DNSRR_DS } from '../lib/dnssec_rr';
 import { RRTypeToString, StringToRRType } from '../lib/dns_type_table';
-import { DNSAnswer, DNSResponse } from './resolver';
+import { DNSResponse } from './resolver';
 import { DoHResolver, DoHProvider } from './resolver_doh';
 import { loadRootAnchors, RootAnchorDS } from '../lib/root_anchors';
+import { errMessage } from './error_util';
 
 export interface VerificationResult {
     verified: boolean;
@@ -195,8 +196,8 @@ export async function verifyDNSSECChain(
         const dnskeyResp = await doh.resolve('.', dnskeyType);
         const count = addDoHResponseToZone(rootZone, dnskeyResp);
         details.push(`[.] DNSKEY RRset (DoH) -> fetched ${count} records`);
-    } catch (err: any) {
-        details.push(`[.] DNSKEY fetch failed: ${err.message}`);
+    } catch (err: unknown) {
+        details.push(`[.] DNSKEY fetch failed: ${errMessage(err)}`);
         return { verified: false, details };
     }
 
@@ -251,8 +252,8 @@ export async function verifyDNSSECChain(
             let keyTags: string | null;
             try {
                 keyTags = await fetchDS(doh, parentZone, childName, dsType);
-            } catch (err: any) {
-                details.push(`[${parentName} -> ${childName}] DS fetch failed: ${err.message}`);
+            } catch (err: unknown) {
+                details.push(`[${parentName} -> ${childName}] DS fetch failed: ${errMessage(err)}`);
                 return { verified: false, details };
             }
 
@@ -279,8 +280,8 @@ export async function verifyDNSSECChain(
                 const dnskeyResp = await doh.resolve(childName, dnskeyType);
                 const count = addDoHResponseToZone(childZone, dnskeyResp);
                 details.push(`[${childName}] DNSKEY (DoH) -> fetched ${count} records`);
-            } catch (err: any) {
-                details.push(`[${childName}] DNSKEY fetch failed: ${err.message}`);
+            } catch (err: unknown) {
+                details.push(`[${childName}] DNSKEY fetch failed: ${errMessage(err)}`);
                 return { verified: false, details };
             }
 
@@ -373,8 +374,8 @@ export async function verifyDNSSEC(
                 // Skip unparseable records
             }
         }
-    } catch (err: any) {
-        details.push(`Failed to fetch DNSKEY for ${signerName}: ${err.message}`);
+    } catch (err: unknown) {
+        details.push(`Failed to fetch DNSKEY for ${signerName}: ${errMessage(err)}`);
         return { verified: false, details };
     }
 
@@ -400,8 +401,8 @@ export async function verifyDNSSEC(
             details.push('RRSIG verification -> FAILED');
         }
         return { verified: result, details };
-    } catch (err: any) {
-        details.push(`Verification error: ${err.message}`);
+    } catch (err: unknown) {
+        details.push(`Verification error: ${errMessage(err)}`);
         return { verified: false, details };
     }
 }

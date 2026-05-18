@@ -38,15 +38,6 @@ function encodeSizePrecision(meters: number): number {
     return (cm << 4) | exp;
 }
 
-// Decode one-byte size/precision to centimeters
-function decodeSizePrecision(byte: number): number {
-    const mantissa = (byte >> 4) & 0x0f;
-    const exponent = byte & 0x0f;
-    let value = mantissa;
-    for (let i = 0; i < exponent; i++) value *= 10;
-    return value; // centimeters
-}
-
 // Parse a coordinate string: "d [m [s.frac]] {N|S|E|W}"
 // Returns [value_in_thousandths_of_arc_second, tokens_consumed, is_positive]
 function parseCoordinate(tokens: string[], startIdx: number, posChar: string, negChar: string): [number, number] {

@@ -1,4 +1,4 @@
-import { DNSRR_OPT, EDNSOption, EDNS_OPTION_NSID, EDNS_OPTION_COOKIE } from '../../../src/lib/rr/opt_rr';
+import { DNSRR_OPT, EDNS_OPTION_NSID, EDNS_OPTION_COOKIE } from '../../../src/lib/rr/opt_rr';
 import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
 import { WireBuilder } from '../../../src/lib/dns_wire_util';
 

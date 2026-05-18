@@ -1,10 +1,11 @@
-import { StringToRRType, RRTypeToString } from '../lib/dns_type_table';
+import { StringToRRType } from '../lib/dns_type_table';
 import { Resolver } from './resolver';
 import { DoHResolver, DoHProvider } from './resolver_doh';
 import { DNSResolver } from './resolver_dns';
 import { formatOutput } from './output';
 import { verifyDNSSEC, verifyDNSSECChain } from './dnssec_verifier';
 import { fetchAndUpdateRootAnchors } from './root_anchor_updater';
+import { errMessage } from './error_util';
 
 interface CLIOptions {
     method: 'dns' | 'doh';
@@ -126,8 +127,8 @@ async function main(): Promise<void> {
     if (opts.updateRootAnchors) {
         try {
             await fetchAndUpdateRootAnchors(opts.dohProvider);
-        } catch (err: any) {
-            console.error(`Error updating root anchors: ${err.message}`);
+        } catch (err: unknown) {
+            console.error(`Error updating root anchors: ${errMessage(err)}`);
             process.exit(1);
         }
         return;
@@ -147,8 +148,8 @@ async function main(): Promise<void> {
     let response;
     try {
         response = await resolver.resolve(opts.fqdn, rrtype);
-    } catch (err: any) {
-        console.error(`Error resolving ${opts.fqdn} ${opts.rrtype}: ${err.message}`);
+    } catch (err: unknown) {
+        console.error(`Error resolving ${opts.fqdn} ${opts.rrtype}: ${errMessage(err)}`);
         process.exit(1);
     }
 
@@ -162,8 +163,8 @@ async function main(): Promise<void> {
             const doh = new DoHResolver(opts.dohProvider);
             try {
                 dohResponse = await doh.resolve(opts.fqdn, rrtype);
-            } catch (err: any) {
-                console.error(`Warning: DNSSEC verification failed (DoH fallback error: ${err.message})`);
+            } catch (err: unknown) {
+                console.error(`Warning: DNSSEC verification failed (DoH fallback error: ${errMessage(err)})`);
                 dohResponse = response;
             }
         }
@@ -173,8 +174,8 @@ async function main(): Promise<void> {
             } else {
                 verification = await verifyDNSSEC(opts.fqdn, rrtype, dohResponse, opts.dohProvider);
             }
-        } catch (err: any) {
-            console.error(`Warning: DNSSEC verification error: ${err.message}`);
+        } catch (err: unknown) {
+            console.error(`Warning: DNSSEC verification error: ${errMessage(err)}`);
         }
     }
 
@@ -192,7 +193,7 @@ async function main(): Promise<void> {
     console.log(output);
 }
 
-main().catch((err) => {
-    console.error(`Fatal error: ${err.message}`);
+main().catch((err: unknown) => {
+    console.error(`Fatal error: ${errMessage(err)}`);
     process.exit(1);
 });

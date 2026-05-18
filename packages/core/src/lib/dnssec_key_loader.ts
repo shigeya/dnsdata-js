@@ -4,6 +4,7 @@
 // Ported from wide-cpp-lib/wide/crypto/key_dnssec.cpp
 
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 
 // Base64url encode without padding (for JWK)
 function base64url_encode(buf: Buffer): string {
@@ -52,7 +53,7 @@ function load_ecdsa_private_key(d: Buffer, algo: number): crypto.KeyObject {
     const pkcs8_inner = Buffer.concat([der_integer(0), algo_id, der_octet_string(sec1_key)]);
     const pkcs8_der = der_sequence(pkcs8_inner);
 
-    return crypto.createPrivateKey({ key: pkcs8_der, format: 'der', type: 'pkcs8' } as any);
+    return crypto.createPrivateKey({ key: pkcs8_der, format: 'der', type: 'pkcs8' });
 }
 
 // OID for Ed25519: 1.3.101.112
@@ -71,7 +72,7 @@ function load_eddsa_private_key(d: Buffer, algo: number): crypto.KeyObject {
     const pkcs8_inner = Buffer.concat([der_integer(0), algo_id, key_octet]);
     const pkcs8_der = der_sequence(pkcs8_inner);
 
-    return crypto.createPrivateKey({ key: pkcs8_der, format: 'der', type: 'pkcs8' } as any);
+    return crypto.createPrivateKey({ key: pkcs8_der, format: 'der', type: 'pkcs8' });
 }
 
 // Parse ISC/BIND keygen private key file format
@@ -139,12 +140,11 @@ export function load_private_key_from_string(text: string): crypto.KeyObject {
         qi: base64url_encode(get_field('Coefficient')),
     };
 
-    return crypto.createPrivateKey({ key: jwk, format: 'jwk' } as any);
+    return crypto.createPrivateKey({ key: jwk, format: 'jwk' });
 }
 
 // Load a private key from ISC/BIND keygen file
 export function load_private_key_from_file(path: string): crypto.KeyObject {
-    const fs = require('fs');
     const text = fs.readFileSync(path, 'utf8');
     return load_private_key_from_string(text);
 }

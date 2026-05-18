@@ -2,8 +2,7 @@
 
 import * as crypto from 'crypto';
 import { DNSSecZone, KeyVerifyMode } from "../../src/lib/dnssec_zone";
-import { DNSKey, RRSig, DNSRR_DS } from "../../src/lib/dnssec_rr";
-import { ResourceRecord } from "../../src/lib/dns_zone";
+import { DNSKey, DNSRR_DS } from "../../src/lib/dnssec_rr";
 
 // Generate a test RSA key pair and create a signed zone for testing
 function create_test_zone(): {
@@ -277,7 +276,7 @@ describe("DNSSecZone parent zone", () => {
     });
 
     it("verify_delegation_signer fails when DS is only in parent but parent not set", () => {
-        const { parentZone, childZone, childKeyTag } = create_parent_child_zones();
+        const { childZone, childKeyTag } = create_parent_child_zones();
         // Unlink parent
         childZone.parent = null;
         const childDnskey = childZone.find_dnskey("example.com.", childKeyTag)!;
@@ -316,7 +315,7 @@ describe("DNSSecZone parent zone", () => {
 
 describe("DNSSecZone signing", () => {
     it("can sign and then verify an RRset", () => {
-        const { zone, keyTag } = create_test_zone();
+        const { zone } = create_test_zone();
         // The A record was already signed in create_test_zone
         // Verify it
         const result = zone.verify_rrset("example.com.", 1);

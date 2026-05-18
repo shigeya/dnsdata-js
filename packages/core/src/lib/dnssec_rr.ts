@@ -134,7 +134,7 @@ function load_ecdsa_public_key(key_data: Uint8Array, algorithm: number): crypto.
         x: base64url_encode(x),
         y: base64url_encode(y),
     };
-    return crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' });
 }
 
 // Load Ed25519/Ed448 public key from DNSSEC format (raw key bytes)
@@ -146,7 +146,7 @@ function load_eddsa_public_key(key_data: Uint8Array, algorithm: number): crypto.
         crv: crv,
         x: base64url_encode(key_data),
     };
-    return crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' });
 }
 
 // Load RSA public key from RFC3110 binary format
@@ -165,7 +165,7 @@ function load_rsa_public_key_rfc3110(key_data: Uint8Array): crypto.KeyObject {
         n: base64url_encode(modulus),
         e: base64url_encode(exponent),
     };
-    return crypto.createPublicKey({ key: jwk, format: 'jwk' } as any);
+    return crypto.createPublicKey({ key: jwk, format: 'jwk' });
 }
 
 //////////////////////////////////////////////////////////// DNSKey
