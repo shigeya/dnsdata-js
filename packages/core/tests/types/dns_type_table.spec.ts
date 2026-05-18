@@ -11,7 +11,7 @@ import {
     StringToRRClass,
     QTypeValidForRequest,
     QClassValidForRequest
-} from "../../src/lib/dns_type_table";
+} from "../../src/types/dns_type_table";
 import {
     UnknownOpCodeError,
     UnknownRCodeError,

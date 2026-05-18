@@ -30,7 +30,7 @@ import {
     DNSRR_NSEC3,
     owner_hash_from_name,
 } from './dnssec_rr';
-import { StringToRRType, RRTypeToString } from './dns_type_table';
+import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import {
     equal_canonical_names,
     label_count,

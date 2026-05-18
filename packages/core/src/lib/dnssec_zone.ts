@@ -4,7 +4,7 @@
 
 import { WireBuilder, compare_uint8arrays } from './dns_wire_util';
 import { domain_name2wire } from './dns_wire';
-import { StringToRRType, RRTypeToString } from './dns_type_table';
+import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import { label_count, last_n_labels } from './dnssec_util';

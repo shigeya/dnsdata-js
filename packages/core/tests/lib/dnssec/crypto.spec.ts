@@ -10,7 +10,7 @@ import {
     AlgoRSASHA1NSEC3SHA1,
     AlgoRSASHA256,
     AlgoRSASHA512,
-} from '../../../src/lib/types/algorithm';
+} from '../../../src/types/algorithm';
 import {
     algo_to_hash,
     ecdsa_coord_len,

@@ -7,7 +7,7 @@
 
 import * as https from 'https';
 import { DoHClient } from '../lib/resolver/doh';
-import { StringToRRType } from '../lib/dns_type_table';
+import { StringToRRType } from '../types/dns_type_table';
 import {
     RootAnchors,
     RootAnchorDS,

@@ -20,7 +20,7 @@
 // `\# <rdlen> <hex>`.
 
 import { parse_domain_name } from './dns_wire';
-import { RRTypeToString, StringToRRType } from './dns_type_table';
+import { RRTypeToString, StringToRRType } from '../types/dns_type_table';
 import { DNSRDataDecodeError } from './dns_exception';
 
 const TYPE_A          = StringToRRType('A');

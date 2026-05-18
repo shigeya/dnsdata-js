@@ -16,7 +16,7 @@
 import { parse_message, RawRR } from '../../dns_message';
 import { rdata_to_string } from '../../rdata_decoder';
 import { ResourceRecord, ns_class, ns_type } from '../../dns_zone';
-import { RRClassToString, RRTypeToString } from '../../dns_type_table';
+import { RRClassToString, RRTypeToString } from '../../../types/dns_type_table';
 import { DoHClient } from './client';
 import { DoHResponseError } from './errors';
 

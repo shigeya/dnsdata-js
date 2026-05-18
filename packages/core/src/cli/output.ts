@@ -7,7 +7,7 @@
 // VerificationResult.
 
 import { ResourceRecord } from '../lib/dns_zone';
-import { RRTypeToString } from '../lib/dns_type_table';
+import { RRTypeToString } from '../types/dns_type_table';
 import { Result, AliasStep, KeySummary, DSSummary, ZoneStep } from '../lib/verifier';
 
 export interface OutputContext {

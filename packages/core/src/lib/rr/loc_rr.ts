@@ -17,7 +17,7 @@
 //   d1 [m1 [s1.frac]] {N|S} d2 [m2 [s2.frac]] {E|W} alt["m"] [siz["m"] [hp["m"] [vp["m"]]]]
 
 import { WireBuilder } from '../dns_wire_util';
-import { StringToRRType } from '../dns_type_table';
+import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';
 

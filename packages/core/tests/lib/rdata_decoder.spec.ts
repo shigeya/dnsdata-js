@@ -9,7 +9,7 @@
 
 import { rdata_to_string, rfc3597 } from '../../src/lib/rdata_decoder';
 import { parse_message } from '../../src/lib/dns_message';
-import { StringToRRType } from '../../src/lib/dns_type_table';
+import { StringToRRType } from '../../src/types/dns_type_table';
 import { DNSRDataDecodeError } from '../../src/lib/dns_exception';
 
 const TYPE_A     = StringToRRType('A');

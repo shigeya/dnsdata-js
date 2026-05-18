@@ -19,7 +19,7 @@ import {
     AlgoRSASHA1NSEC3SHA1,
     AlgoRSASHA256,
     AlgoRSASHA512,
-} from '../types/algorithm';
+} from '../../types/algorithm';
 
 // is_ecdsa_algorithm reports whether algorithm is one of the DNSSEC
 // ECDSA algorithms (RFC 6605): P-256 / SHA-256 or P-384 / SHA-384.

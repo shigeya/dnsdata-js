@@ -5,14 +5,14 @@
 import * as crypto from 'crypto';
 import { WireBuilder } from './dns_wire_util';
 import { domain_name2wire } from './dns_wire';
-import { StringToRRType, RRTypeToString } from './dns_type_table';
+import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
 import { DNSZonePresentationFormatError } from './dns_exception';
 import {
     compare_canonical_names,
     equal_canonical_names,
 } from './dnssec_util';
-import { AlgoRSAMD5, AlgoED25519 } from './types/algorithm';
+import { AlgoRSAMD5, AlgoED25519 } from '../types/algorithm';
 import {
     algo_to_hash,
     ecdsa_coord_len,

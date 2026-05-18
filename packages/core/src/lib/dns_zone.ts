@@ -4,7 +4,7 @@
 
 import { WireBuilder } from './dns_wire_util';
 import { domain_name2wire } from './dns_wire';
-import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from './dns_type_table';
+import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from '../types/dns_type_table';
 import { DNSZoneRDataFormatError } from './dns_exception';
 
 // Type aliases

@@ -8,7 +8,7 @@
 //   Base64-encoded Transferable Public Key (RFC 4648 §4)
 
 import { WireBuilder } from '../dns_wire_util';
-import { StringToRRType } from '../dns_type_table';
+import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';
 

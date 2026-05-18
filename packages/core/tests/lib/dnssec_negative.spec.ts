@@ -10,7 +10,7 @@ import {
     DNSRR_NSEC3,
     owner_hash_from_name,
 } from '../../src/lib/dnssec_rr';
-import { StringToRRType } from '../../src/lib/dns_type_table';
+import { StringToRRType } from '../../src/types/dns_type_table';
 
 const TYPE_A    = StringToRRType('A');
 const TYPE_AAAA = StringToRRType('AAAA');

@@ -10,7 +10,7 @@
 //   Hex digits separated by hyphens: e.g. "00-00-5e-00-53-2a"
 
 import { WireBuilder } from '../dns_wire_util';
-import { StringToRRType } from '../dns_type_table';
+import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';
 

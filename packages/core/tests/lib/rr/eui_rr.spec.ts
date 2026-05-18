@@ -1,6 +1,6 @@
 import { ResourceRecord } from '../../../src/lib/dns_zone';
 import { DNSRR_EUI } from '../../../src/lib/rr/eui_rr';
-import { StringToRRType, RRTypeToString } from '../../../src/lib/dns_type_table';
+import { StringToRRType, RRTypeToString } from '../../../src/types/dns_type_table';
 import { WireBuilder } from '../../../src/lib/dns_wire_util';
 
 describe('dns_type_table EUI48/EUI64', () => {

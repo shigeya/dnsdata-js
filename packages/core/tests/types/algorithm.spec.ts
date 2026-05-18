@@ -24,7 +24,7 @@ import {
     StringToAlgorithm,
     AlgorithmSupported,
     UnknownAlgorithmError,
-} from '../../../src/lib/types/algorithm';
+} from '../../src/types/algorithm';
 
 const VECTORS: ReadonlyArray<readonly [number, string]> = [
     [AlgoDeleted,            'DELETE'],

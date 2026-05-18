@@ -5,7 +5,7 @@ import {
     UnknownRCodeError,
     UnknownRRTypeError,
     UnknownRRClassError,
-} from './dns_exception';
+} from '../lib/dns_exception';
 
 type ns_opcode = number;
 type ns_rcode = number;

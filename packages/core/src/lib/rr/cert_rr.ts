@@ -13,7 +13,7 @@
 //   type(decimal or mnemonic) key_tag(decimal) algorithm(decimal or mnemonic) certificate(base64)
 
 import { WireBuilder } from '../dns_wire_util';
-import { StringToRRType } from '../dns_type_table';
+import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';
 

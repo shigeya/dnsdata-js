@@ -11,7 +11,7 @@
 // through the same lib/ surface that mailsec-probe and other
 // downstream consumers use.
 
-import { StringToRRType } from '../lib/dns_type_table';
+import { StringToRRType } from '../types/dns_type_table';
 import {
     DoHClient,
     DEFAULT_GOOGLE,
