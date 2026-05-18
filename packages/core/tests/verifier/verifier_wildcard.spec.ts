@@ -21,7 +21,7 @@ import {
     Verifier,
     Verdict,
     Resolver,
-} from '../../src/lib/verifier';
+} from '../../src/verifier/verifier';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS     = StringToRRType('DS');
