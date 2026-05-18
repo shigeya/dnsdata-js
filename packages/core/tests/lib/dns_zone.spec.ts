@@ -1,7 +1,8 @@
 // DNS Zone and ResourceRecord tests
 
-import { ResourceRecord, Zone } from "../../src/lib/dns_zone";
+import { ResourceRecord, Zone, has_encoder } from "../../src/lib/dns_zone";
 import { WireBuilder } from "../../src/lib/dns_wire_util";
+import { DNSZoneRDataFormatError } from "../../src/lib/dns_exception";
 
 describe("ResourceRecord", () => {
     it("can create from string class and type", () => {
@@ -156,6 +157,77 @@ describe("ResourceRecord", () => {
     it("renders to_string correctly", () => {
         const rr = new ResourceRecord("example.com.", 3600, "IN", "A", "1.2.3.4");
         expect(rr.to_string()).toBe("example.com. 3600 IN A 1.2.3.4");
+    });
+
+    // UF-004: malformed RDATA used to silently produce a 0-byte body. The
+    // built-in encoders now throw DNSZoneRDataFormatError so callers can
+    // distinguish a missing encoder from a bad presentation value.
+    describe("get_wire_body error handling (UF-004)", () => {
+        it("throws DNSZoneRDataFormatError for malformed A RDATA", () => {
+            const rr = new ResourceRecord("x.net.", 3600, "IN", "A", "not-an-ip");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+            expect(() => rr.get_wire_body(wb)).toThrow(/A:/);
+        });
+
+        it("throws DNSZoneRDataFormatError for out-of-range A octets", () => {
+            const rr = new ResourceRecord("x.net.", 3600, "IN", "A", "256.0.0.1");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+        });
+
+        it("throws DNSZoneRDataFormatError for malformed AAAA RDATA", () => {
+            const rr = new ResourceRecord("x.net.", 3600, "IN", "AAAA", "not-an-ipv6");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+            expect(() => rr.get_wire_body(wb)).toThrow(/AAAA:/);
+        });
+
+        it("throws DNSZoneRDataFormatError for malformed MX RDATA", () => {
+            const rr = new ResourceRecord("example.com.", 3600, "IN", "MX", "foo bar");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+            expect(() => rr.get_wire_body(wb)).toThrow(/MX:/);
+        });
+
+        it("throws DNSZoneRDataFormatError for malformed SRV RDATA", () => {
+            const rr = new ResourceRecord("_sip._tcp.example.com.", 3600, "IN", "SRV", "missing fields");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+        });
+
+        it("throws DNSZoneRDataFormatError for malformed CAA RDATA", () => {
+            const rr = new ResourceRecord("example.com.", 3600, "IN", "CAA", "no-flags-here");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+        });
+
+        it("throws DNSZoneRDataFormatError for malformed SOA RDATA", () => {
+            const rr = new ResourceRecord("example.com.", 3600, "IN", "SOA", "missing fields");
+            const wb = new WireBuilder();
+            expect(() => rr.get_wire_body(wb)).toThrow(DNSZoneRDataFormatError);
+        });
+
+        it("get_wire_body is a no-op for types without an encoder", () => {
+            // HS class type with no encoder (numeric type 999 — not assigned).
+            const rr = new ResourceRecord("x.net.", 3600, 1, 999, "anything");
+            const wb = new WireBuilder();
+            // Should NOT throw — back-compat for "unsupported type".
+            expect(() => rr.get_wire_body(wb)).not.toThrow();
+            expect(wb.build().length).toBe(0);
+        });
+
+        it("has_encoder reports built-in encoder types", () => {
+            expect(has_encoder(1)).toBe(true);    // A
+            expect(has_encoder(28)).toBe(true);   // AAAA
+            expect(has_encoder(15)).toBe(true);   // MX
+            expect(has_encoder(33)).toBe(true);   // SRV
+            expect(has_encoder(257)).toBe(true);  // CAA
+        });
+
+        it("has_encoder reports false for unknown types", () => {
+            expect(has_encoder(999)).toBe(false);
+        });
     });
 });
 

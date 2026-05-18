@@ -5,6 +5,7 @@
 import { WireBuilder } from './dns_wire_util';
 import { domain_name2wire } from './dns_wire';
 import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from './dns_type_table';
+import { DNSZoneRDataFormatError } from './dns_exception';
 
 // Type aliases
 export type ns_type = number;
@@ -16,6 +17,30 @@ const handler_registry = new Map<ns_type, HandlerFactory>();
 
 export function register_rr_handler(type: ns_type, factory: HandlerFactory): void {
     handler_registry.set(type, factory);
+}
+
+// RR types that ResourceRecord encodes inline (no separate handler).
+// Mirrors the switch in `get_wire_body` and powers `has_encoder`.
+const BUILTIN_ENCODER_TYPES: ReadonlySet<ns_type> = new Set<ns_type>([
+    1,   // A
+    2,   // NS
+    5,   // CNAME
+    6,   // SOA
+    12,  // PTR
+    15,  // MX
+    16,  // TXT
+    28,  // AAAA
+    33,  // SRV
+    39,  // DNAME
+    257, // CAA
+]);
+
+// True if this type has an encoder available — either a registered handler
+// or one of the built-in `_wire_body_*` methods. Lets callers tell
+// "encoder missing for this type" apart from "encoder threw on malformed
+// RDATA" (the latter now surfaces as DNSZoneRDataFormatError).
+export function has_encoder(type: ns_type): boolean {
+    return handler_registry.has(type) || BUILTIN_ENCODER_TYPES.has(type);
 }
 
 // Abstract base class for resource record data handlers
@@ -193,7 +218,7 @@ export class ResourceRecord {
 
     private _wire_body_a(builder: WireBuilder): void {
         const ip = parse_ipv4(this.value);
-        if (!ip) return;
+        if (!ip) throw new DNSZoneRDataFormatError(`A: invalid IPv4 address "${this.value}"`);
         builder.append_uint16(4);
         builder.append_bytes(ip);
     }
@@ -209,7 +234,7 @@ export class ResourceRecord {
 
     private _wire_body_soa(builder: WireBuilder): void {
         const m = this.value.match(/^(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/);
-        if (!m) return;
+        if (!m) throw new DNSZoneRDataFormatError(`SOA: invalid presentation "${this.value}"`);
         const mname_wire = domain_name2wire(m[1]);
         const rname_wire = domain_name2wire(m[2]);
         const rdlen = mname_wire.length + rname_wire.length + 4 * 5;
@@ -226,7 +251,7 @@ export class ResourceRecord {
     private _wire_body_aaaa(builder: WireBuilder): void {
         const addr = this.value.trim().split(/\s+/)[0];
         const ip = parse_ipv6(addr);
-        if (!ip) return;
+        if (!ip) throw new DNSZoneRDataFormatError(`AAAA: invalid IPv6 address "${this.value}"`);
         builder.append_uint16(16);
         builder.append_bytes(ip);
     }
@@ -234,7 +259,7 @@ export class ResourceRecord {
     // MX: preference(2) + exchange(wire domain name)
     private _wire_body_mx(builder: WireBuilder): void {
         const m = this.value.match(/^(\d+)\s+(\S+)/);
-        if (!m) return;
+        if (!m) throw new DNSZoneRDataFormatError(`MX: invalid presentation "${this.value}"`);
         const preference = parseInt(m[1]);
         const exchange_wire = domain_name2wire(m[2]);
         builder.append_uint16(2 + exchange_wire.length); // rdlength
@@ -268,7 +293,7 @@ export class ResourceRecord {
     // SRV: priority(2) + weight(2) + port(2) + target(wire domain name)
     private _wire_body_srv(builder: WireBuilder): void {
         const m = this.value.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/);
-        if (!m) return;
+        if (!m) throw new DNSZoneRDataFormatError(`SRV: invalid presentation "${this.value}"`);
         const priority = parseInt(m[1]);
         const weight = parseInt(m[2]);
         const port = parseInt(m[3]);
@@ -283,7 +308,7 @@ export class ResourceRecord {
     // CAA: flags(1) + tag_length(1) + tag + value
     private _wire_body_caa(builder: WireBuilder): void {
         const m = this.value.match(/^(\d+)\s+(\S+)\s+"([^"]*)"/);
-        if (!m) return;
+        if (!m) throw new DNSZoneRDataFormatError(`CAA: invalid presentation "${this.value}"`);
         const flags = parseInt(m[1]);
         const tag = Buffer.from(m[2], 'ascii');
         const caa_value = Buffer.from(m[3], 'utf8');
