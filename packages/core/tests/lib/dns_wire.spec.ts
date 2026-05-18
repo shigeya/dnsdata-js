@@ -1,6 +1,7 @@
 // Spec on: Converting between DNS wire format and string(utf)
 
 import { domain_name2wire, wire2domain_name } from "../../src/lib/dns_wire";
+import { DNSWireError } from "../../src/lib/dns_exception";
 
 describe("Domain name wire format conversion library", () => {
     const test_vector: Array<[string, Uint8Array]> = [
@@ -76,6 +77,71 @@ describe("Domain name wire format conversion library", () => {
             const wire = domain_name2wire("_x.");
             expect(wire[1]).toBe(0x5f);
             expect(wire[1]).not.toBe(0x7f);
+        });
+    });
+
+    // UF-002: RFC 1035 §2.3.4 / §4.1.4 length and structural validation.
+    describe("length and structural validation (UF-002)", () => {
+        describe("domain_name2wire", () => {
+            it("accepts a 63-octet label (maximum)", () => {
+                const label = "a".repeat(63);
+                const name = `${label}.example.com.`;
+                const wire = domain_name2wire(name);
+                expect(wire[0]).toBe(63);
+            });
+
+            it("rejects a 64-octet label", () => {
+                const label = "a".repeat(64);
+                const name = `${label}.example.com.`;
+                expect(() => domain_name2wire(name)).toThrow(DNSWireError);
+                expect(() => domain_name2wire(name)).toThrow(/label too long/);
+            });
+
+            it("accepts a name encoding to exactly 255 octets", () => {
+                // 4 labels of 63 + root: 4 * (1+63) + 1 = 257 octets — too long.
+                // Use 3*63 + 1*61 + root: 3*64 + 62 + 1 = 255 exactly.
+                const a63 = "a".repeat(63);
+                const a61 = "a".repeat(61);
+                const name = `${a63}.${a63}.${a63}.${a61}.`;
+                const wire = domain_name2wire(name);
+                expect(wire.length).toBe(255);
+            });
+
+            it("rejects a name encoding to 256 octets", () => {
+                // 3*64 + 62 + 1 (a63 a63 a63 a62 root) = 256 octets exactly.
+                const a63 = "a".repeat(63);
+                const a62 = "a".repeat(62);
+                const name = `${a63}.${a63}.${a63}.${a62}.`;
+                expect(() => domain_name2wire(name)).toThrow(DNSWireError);
+                expect(() => domain_name2wire(name)).toThrow(/name too long/);
+            });
+
+            it("rejects empty labels in the middle of a name", () => {
+                expect(() => domain_name2wire("foo..bar.")).toThrow(DNSWireError);
+                expect(() => domain_name2wire("foo..bar.")).toThrow(/empty label/);
+            });
+        });
+
+        describe("wire2domain_name", () => {
+            it("rejects length octet 0x40 (reserved)", () => {
+                const wire = new Uint8Array([0x40, 0x61, 0x00]);
+                expect(() => wire2domain_name(wire)).toThrow(DNSWireError);
+                expect(() => wire2domain_name(wire)).toThrow(/invalid length octet/);
+            });
+
+            it("rejects length octet 0xC0 (compression pointer)", () => {
+                // wire2domain_name does not decompress; pointers must be rejected.
+                const wire = new Uint8Array([0xc0, 0x0c]);
+                expect(() => wire2domain_name(wire)).toThrow(DNSWireError);
+                expect(() => wire2domain_name(wire)).toThrow(/invalid length octet/);
+            });
+
+            it("rejects truncated input (declared label runs off the end)", () => {
+                // Length octet says 5 bytes follow, but only 3 are present.
+                const wire = new Uint8Array([0x05, 0x61, 0x62, 0x63]);
+                expect(() => wire2domain_name(wire)).toThrow(DNSWireError);
+                expect(() => wire2domain_name(wire)).toThrow(/truncated wire/);
+            });
         });
     });
 });
