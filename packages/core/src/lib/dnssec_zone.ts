@@ -3,9 +3,11 @@
 // Ported from wide-cpp-lib/wide/dns/dnssec_zone.hpp / dnssec_zone.cpp
 
 import { WireBuilder, compare_uint8arrays } from './dns_wire_util';
+import { domain_name2wire } from './dns_wire';
 import { StringToRRType, RRTypeToString } from './dns_type_table';
 import { Zone, ResourceRecord } from './dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
+import { label_count, last_n_labels } from './dnssec_util';
 import './rr/dane_rr'; // Register TLSA/SMIMEA handlers
 import './rr/sshfp_rr'; // Register SSHFP handler
 import './rr/svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
@@ -81,10 +83,26 @@ export class DNSSecZone extends Zone {
         const rrset = this.find_rrset(name, type);
         if (rrset.length === 0) return null;
 
-        // Build wire header from first RR
-        const header_builder = new WireBuilder();
-        rrset[0].get_wire_header(header_builder);
-        const header = header_builder.build();
+        // RFC 4035 §5.3.2: when the covering RRSIG's Labels count is
+        // fewer than the rrset's owner-name label count, the answer was
+        // produced by wildcard expansion. The validator reconstructs
+        // the original wildcard owner ("*." + the right-most
+        // rrsig.labels labels of name) and computes the digest header
+        // with that owner instead of the synthesised qname — otherwise
+        // the digest target won't match the one the authoritative
+        // signer produced. Signers that set Labels correctly produce
+        // matching digests; same function, same semantics on both sides.
+        const expected_labels = label_count(name);
+        const wildcard_synthesis = rrsig.labels < expected_labels;
+        let header: Uint8Array;
+        if (wildcard_synthesis) {
+            const wildcard_owner = '*.' + last_n_labels(name, rrsig.labels);
+            header = wire_header_for_owner(wildcard_owner, rrset[0].type, rrset[0].rrclass);
+        } else {
+            const header_builder = new WireBuilder();
+            rrset[0].get_wire_header(header_builder);
+            header = header_builder.build();
+        }
 
         // Build wire body for each RR, then sort by binary order
         const bodies: Uint8Array[] = [];
@@ -206,10 +224,23 @@ export class DNSSecZone extends Zone {
         return ds.verify_digest(key_digest);
     }
 
-    // Sign an RRset and return a new RRSIG ResourceRecord
+    // Sign an RRset and return a new RRSIG ResourceRecord.
+    //
+    // labelsOverride, when supplied, replaces the RRSIG's Labels count
+    // before digest computation. Used to emulate authoritative-server
+    // wildcard expansion (RFC 4035 §5.3.2): the rrset itself lives at a
+    // synthesised qname, but the signer wrote Labels = closest-encloser
+    // label count so validators can detect the synthesis. Without the
+    // override, [RRSig] derives Labels from the owner name and the
+    // digest target lands at the synthesised qname instead of the
+    // wildcard owner.
     sign_rr(label: string, ttl: number, type: number,
-            key: DNSKey, inception: number, expire: number): ResourceRecord | null {
+            key: DNSKey, inception: number, expire: number,
+            labelsOverride?: number): ResourceRecord | null {
         const rrsig = new RRSig(null, label, ttl, type, inception, expire, key);
+        if (labelsOverride !== undefined) {
+            rrsig.labels = labelsOverride;
+        }
 
         const digest_target = this.create_digest_target(rrsig, label, type);
         if (!digest_target) return null;
@@ -223,4 +254,16 @@ export class DNSSecZone extends Zone {
 
         return new ResourceRecord(label, ttl, 'IN', 'RRSIG', rrsig_value);
     }
+}
+
+// wire_header_for_owner emits the canonical RR-header bytes
+// (owner_name(wire) + type(uint16) + class(uint16)) for an explicit
+// owner. Used by [DNSSecZone.create_digest_target] when wildcard
+// reconstruction overrides the rrset's literal owner.
+function wire_header_for_owner(owner: string, rrtype: number, rrclass: number): Uint8Array {
+    const builder = new WireBuilder();
+    builder.append_bytes(domain_name2wire(owner));
+    builder.append_uint16(rrtype);
+    builder.append_uint16(rrclass);
+    return builder.build();
 }

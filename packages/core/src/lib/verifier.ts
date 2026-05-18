@@ -34,6 +34,7 @@ import { StringToRRType, RRTypeToString } from './dns_type_table';
 import {
     equal_canonical_names,
     label_count,
+    last_n_labels,
 } from './dnssec_util';
 import {
     BUILTIN_ROOT_ANCHORS,
@@ -203,7 +204,33 @@ export interface Result {
     // directly. The terminal qname is the `target` of the last entry,
     // NOT itself an alias step.
     aliases?: AliasStep[];
+    // wildcard is set when the terminal positive answer was produced
+    // by wildcard expansion (RFC 4035 §5.3.4). It carries the
+    // reconstructed wildcard owner, the closest encloser, the
+    // next-closer name whose non-existence was proven, and a short
+    // reason string naming the NSEC/NSEC3 that produced the proof.
+    // The verdict on a properly-proven wildcard remains
+    // [Verdict.Secure]; consumers that need to distinguish "real
+    // rrset" from "wildcard-synthesised rrset" check this field.
+    wildcard?: WildcardInfo;
     evidence: Evidence;
+}
+
+// WildcardInfo describes a wildcard-synthesised positive answer.
+//
+// source is the reconstructed wildcard owner the validator used for
+// digest computation (e.g. "*.example.com."). closestEncloser is the
+// deepest ancestor of the qname that exists in the zone (the same
+// labels that, prefixed with "*.", form the wildcard owner).
+// nextCloser is the closestEncloser's child along qname's path —
+// the name whose non-existence the validator proved via NSEC or
+// NSEC3. proofReason is a short, human-readable label naming the
+// NSEC / NSEC3 record(s) that produced the proof.
+export interface WildcardInfo {
+    source:          string;
+    closestEncloser: string;
+    nextCloser:      string;
+    proofReason:     string;
 }
 
 // AliasStep records one CNAME or DNAME hop encountered during
@@ -242,6 +269,7 @@ interface HopOutcome {
     insecureReason?: string;
     negativeReason?: string;
     alias?:          AliasStep;
+    wildcard?:       WildcardInfo;
 }
 
 //////////////////////////////////////////////////////////// Verifier
@@ -349,6 +377,7 @@ export class Verifier {
             if (outcome.insecureAt)    result.insecureAt = outcome.insecureAt;
             if (outcome.insecureReason) result.insecureReason = outcome.insecureReason;
             if (outcome.negativeReason) result.negativeReason = outcome.negativeReason;
+            if (outcome.wildcard)      result.wildcard = outcome.wildcard;
             return result;
         }
 
@@ -470,6 +499,26 @@ export class Verifier {
                     verdict: Verdict.Bogus,
                     bogusAt: currentName,
                     bogusReason: `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`,
+                };
+            }
+            // Verified. RFC 4035 §5.3.2: if the covering RRSIG's Labels
+            // field indicates wildcard synthesis, §5.3.4 also requires
+            // a proof that the next-closer name does not exist —
+            // otherwise the wildcard rrset could be replayed at a name
+            // that actually has its own rrset.
+            const wc = detect_wildcard(currentZone, qname, qtype);
+            if (wc) {
+                const proof = prove_qname_non_existence(currentZone, wc.nextCloser);
+                if (!proof) {
+                    return {
+                        verdict: Verdict.Bogus,
+                        bogusAt: currentName,
+                        bogusReason: `wildcard synthesis at ${wc.source} lacks non-existence proof for ${wc.nextCloser}`,
+                    };
+                }
+                return {
+                    verdict: Verdict.Secure,
+                    wildcard: { ...wc, proofReason: proof },
                 };
             }
             return { verdict: Verdict.Secure };
@@ -1120,6 +1169,66 @@ function canon_labels_trim(name: string): string[] {
     const cleaned = (name.endsWith('.') ? name.slice(0, -1) : name).toLowerCase();
     if (cleaned === '') return [];
     return cleaned.split('.');
+}
+
+//////////////////////////////////////////////////////////// wildcard
+
+// detect_wildcard reports whether the (qname, qtype) rrset in z was
+// produced by wildcard expansion, by comparing the covering RRSIG's
+// labels field with qname's label count (RFC 4034 §3.1.3, RFC 4035
+// §5.3.2).
+//
+// Returns null when no synthesis is detectable. Returns a
+// WildcardInfo (without proofReason — the caller fills that in after
+// verifying the non-existence of the next-closer name) when synthesis
+// is observed.
+function detect_wildcard(z: DNSSecZone, qname: string, qtype: number): Omit<WildcardInfo, 'proofReason'> | null {
+    const sigs = z.find_rrsigs(qname, qtype);
+    if (sigs.length === 0) return null;
+    const q_labels = label_count(qname);
+    for (const sig of sigs) {
+        if (sig.labels >= q_labels) continue;
+        const closest = last_n_labels(qname, sig.labels);
+        const next_closer = last_n_labels(qname, sig.labels + 1);
+        return {
+            source: '*.' + closest,
+            closestEncloser: closest,
+            nextCloser: next_closer,
+        };
+    }
+    return null;
+}
+
+// prove_qname_non_existence proves that nextCloser does not exist as
+// a signed name in z. RFC 4035 §5.3.4 requires this proof to
+// accompany any wildcard-synthesised positive answer; without it an
+// attacker could replay the wildcard rrset for a name that actually
+// has its own rrset.
+//
+// Two proof shapes are accepted:
+//   - An NSEC whose range covers nextCloser, signed under z's keys.
+//   - An NSEC3 whose range covers H(nextCloser), signed under z's keys.
+//
+// Returns a short, human-readable reason string on success, or null
+// when no usable proof is present.
+function prove_qname_non_existence(z: DNSSecZone, next_closer: string): string | null {
+    // NSEC first.
+    for (const c of nsec_candidates(z)) {
+        if (!c.nsec.covers_name(c.owner, next_closer)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
+        return `NSEC at ${c.owner} covers next-closer ${next_closer}`;
+    }
+    // NSEC3.
+    for (const c of nsec3_candidates(z)) {
+        let target: Uint8Array;
+        try {
+            target = DNSRR_NSEC3.compute_hash(next_closer, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+        } catch { continue; }
+        if (!c.nsec3.covers_hash(c.ownerHash, target)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+        return `NSEC3 at ${c.owner} covers hash of next-closer ${next_closer}`;
+    }
+    return null;
 }
 
 function bytes_equal(a: Uint8Array, b: Uint8Array): boolean {
