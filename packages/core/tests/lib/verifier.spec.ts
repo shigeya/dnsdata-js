@@ -324,7 +324,7 @@ describe('Verifier chain walk', () => {
         expect(result.bogusReason).toMatch(/RRSIG/);
     });
 
-    it('returns Indeterminate when the leaf rrset is missing (NODATA — NSEC proofs out of v0.1.0 scope)', async () => {
+    it('returns Indeterminate when the leaf rrset is missing and no NSEC/NSEC3 proof is supplied', async () => {
         const root = make_zone('.');
         const example = make_zone('example.');
         delegate(root, example);
@@ -339,3 +339,165 @@ describe('Verifier chain walk', () => {
         expect(result.chain.map(s => s.zone)).toEqual(['.', 'example.']);
     });
 });
+
+//////////////////////////////////////////////////////////// negative proofs
+
+describe('Verifier negative proofs (UP-004 / #8)', () => {
+    it('returns Insecure when the parent proves no-DS via a matching NSEC', async () => {
+        // Two-level chain: root → com. is signed; example.com. has no
+        // DS in com. — and com. publishes an NSEC at example.com. with
+        // a no-DS bitmap (NS RRSIG NSEC, no DS / SOA).
+        const root = make_zone('.');
+        const com = make_zone('com.');
+        delegate(root, com);
+
+        add_signed(com, 'example.com.', 'NSEC', 'f.com. NS RRSIG NSEC');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('com.', TYPE_DS), find_with_sigs(root.zone, 'com.', TYPE_DS)],
+            [key('com.', TYPE_DNSKEY), find_with_sigs(com.zone, 'com.', TYPE_DNSKEY)],
+            // DS at example.com. → empty + signed NSEC proving no-DS.
+            [key('example.com.', TYPE_DS), find_with_sigs(com.zone, 'example.com.', TYPE_NSEC)],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('www.example.com.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.Insecure);
+        expect(result.insecureAt).toBe('example.com.');
+        expect(result.insecureReason).toMatch(/NSEC/);
+    });
+
+    it('does NOT classify Insecure when the NSEC bitmap also contains DS', async () => {
+        // Same shape, but the NSEC asserts a DS bit — contradicting
+        // the missing DS rrset. The proof MUST NOT be accepted, so
+        // the verdict falls through to Indeterminate (the chain walker
+        // continues past example.com. as a non-cut and the DNSKEY
+        // lookup at host.example.com. eventually returns nothing).
+        const root = make_zone('.');
+        const com = make_zone('com.');
+        delegate(root, com);
+
+        add_signed(com, 'example.com.', 'NSEC', 'f.com. NS DS RRSIG NSEC');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('com.', TYPE_DS), find_with_sigs(root.zone, 'com.', TYPE_DS)],
+            [key('com.', TYPE_DNSKEY), find_with_sigs(com.zone, 'com.', TYPE_DNSKEY)],
+            [key('example.com.', TYPE_DS), find_with_sigs(com.zone, 'example.com.', TYPE_NSEC)],
+            // Empty leaf responses → fall through to Indeterminate.
+            [key('host.example.com.', TYPE_DS), []],
+            [key('host.example.com.', TYPE_A), []],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('host.example.com.', TYPE_A);
+        expect(result.verdict).not.toBe(Verdict.Insecure);
+    });
+
+    it('returns SecureNoData when the leaf zone proves NODATA via a matching NSEC', async () => {
+        // Three-level chain: root → com. → example.com. is fully
+        // signed. www.example.com. has an A record AND an NSEC saying
+        // "I have A RRSIG NSEC, nothing else." Asking for AAAA should
+        // produce a SecureNoData verdict.
+        const root = make_zone('.');
+        const com = make_zone('com.');
+        const example = make_zone('example.com.');
+        delegate(root, com);
+        delegate(com, example);
+
+        add_signed(example, 'www.example.com.', 'A', '192.0.2.1');
+        add_signed(example, 'www.example.com.', 'NSEC', 'z.example.com. A RRSIG NSEC');
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('com.', TYPE_DS), find_with_sigs(root.zone, 'com.', TYPE_DS)],
+            [key('com.', TYPE_DNSKEY), find_with_sigs(com.zone, 'com.', TYPE_DNSKEY)],
+            [key('example.com.', TYPE_DS), find_with_sigs(com.zone, 'example.com.', TYPE_DS)],
+            [key('example.com.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.com.', TYPE_DNSKEY)],
+            [key('www.example.com.', TYPE_DS), []],
+            // AAAA → empty, but the NSEC at www.example.com. is the
+            // NODATA proof.
+            [key('www.example.com.', StringToRRType('AAAA')), find_with_sigs(example.zone, 'www.example.com.', TYPE_NSEC)],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('www.example.com.', StringToRRType('AAAA'));
+        expect(result.verdict).toBe(Verdict.SecureNoData);
+        expect(result.negativeReason).toMatch(/NSEC/);
+    });
+
+    it('returns SecureNXDomain when two NSECs cover qname and the wildcard', async () => {
+        // Two NSECs at the leaf zone:
+        //   apex NSEC: example.com. → m.example.com.  (covers *.example.com.)
+        //   later NSEC: m.example.com. → z.example.com.  (covers missing.example.com.)
+        // Together they prove qname does not exist AND no wildcard exists.
+        const root = make_zone('.');
+        const com = make_zone('com.');
+        const example = make_zone('example.com.');
+        delegate(root, com);
+        delegate(com, example);
+
+        add_signed(example, 'example.com.', 'NSEC', 'm.example.com. NS SOA RRSIG NSEC');
+        add_signed(example, 'm.example.com.', 'NSEC', 'z.example.com. A RRSIG NSEC');
+
+        const nsecs = [
+            ...find_with_sigs(example.zone, 'example.com.', TYPE_NSEC),
+            ...find_with_sigs(example.zone, 'm.example.com.', TYPE_NSEC),
+        ];
+
+        const resolver = new MapResolver([
+            [key('.', TYPE_DNSKEY), find_with_sigs(root.zone, '.', TYPE_DNSKEY)],
+            [key('com.', TYPE_DS), find_with_sigs(root.zone, 'com.', TYPE_DS)],
+            [key('com.', TYPE_DNSKEY), find_with_sigs(com.zone, 'com.', TYPE_DNSKEY)],
+            [key('example.com.', TYPE_DS), find_with_sigs(com.zone, 'example.com.', TYPE_DS)],
+            [key('example.com.', TYPE_DNSKEY), find_with_sigs(example.zone, 'example.com.', TYPE_DNSKEY)],
+            [key('missing.example.com.', TYPE_DS), []],
+            [key('missing.example.com.', TYPE_A), nsecs],
+        ]);
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+
+        const result = await v.validate('missing.example.com.', TYPE_A);
+        expect(result.verdict).toBe(Verdict.SecureNXDomain);
+        expect(result.negativeReason).toMatch(/wildcard/);
+    });
+});
+
+const TYPE_NSEC = StringToRRType('NSEC');
+
+// MapResolver answers from an explicit (name, qtype) → records lookup
+// table. Used by the negative-proof tests because those need precise
+// control over which records appear in which response — e.g. a "DS at
+// example.com." query that returns an NSEC instead of a DS rrset.
+class MapResolver implements Resolver {
+    private readonly map = new Map<string, ResourceRecord[]>();
+    public queries: { name: string; qtype: number }[] = [];
+
+    constructor(entries: [string, ResourceRecord[]][]) {
+        for (const [k, rs] of entries) this.map.set(k, rs);
+    }
+
+    async query(name: string, qtype: number): Promise<ResourceRecord[]> {
+        this.queries.push({ name, qtype });
+        return this.map.get(key(name, qtype)) ?? [];
+    }
+}
+
+function key(name: string, qtype: number): string {
+    return `${name} ${qtype}`;
+}
+
+// find_with_sigs returns z's records at (name, qtype) together with
+// any RRSIG at the same name covering qtype. Mirrors the rrsetWithSigs
+// helper in the Go test suite.
+function find_with_sigs(z: DNSSecZone, name: string, qtype: number): ResourceRecord[] {
+    const out: ResourceRecord[] = [];
+    out.push(...z.find_rrset(name, qtype));
+    for (const rr of z.find_rrset(name, TYPE_RRSIG)) {
+        const h = rr.get_handler();
+        if (h instanceof RRSig && h.type_covered === qtype) {
+            out.push(rr);
+        }
+    }
+    return out;
+}
