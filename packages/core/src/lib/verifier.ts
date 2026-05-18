@@ -41,10 +41,12 @@ import {
 } from './root_anchors';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
-const TYPE_DS = StringToRRType('DS');
-const TYPE_RRSIG = StringToRRType('RRSIG');
-const TYPE_NSEC  = StringToRRType('NSEC');
-const TYPE_NSEC3 = StringToRRType('NSEC3');
+const TYPE_DS     = StringToRRType('DS');
+const TYPE_RRSIG  = StringToRRType('RRSIG');
+const TYPE_NSEC   = StringToRRType('NSEC');
+const TYPE_NSEC3  = StringToRRType('NSEC3');
+const TYPE_CNAME  = StringToRRType('CNAME');
+const TYPE_DNAME  = StringToRRType('DNAME');
 
 //////////////////////////////////////////////////////////// Verdict
 
@@ -195,7 +197,51 @@ export interface Result {
     // naming the NSEC/NSEC3 record(s) that produced the proof. Empty
     // for other verdicts.
     negativeReason?: string;
+    // aliases enumerates every CNAME / DNAME redirection the chain
+    // walker followed before reaching the terminal qname. Empty when
+    // the original qname has the requested rrset (or a negative proof)
+    // directly. The terminal qname is the `target` of the last entry,
+    // NOT itself an alias step.
+    aliases?: AliasStep[];
     evidence: Evidence;
+}
+
+// AliasStep records one CNAME or DNAME hop encountered during
+// resolution. Each hop is a signed redirect from `from` (the CNAME or
+// DNAME owner) to `target` (the rewritten qname for the next hop).
+// `zone` names the zone that signed the redirect, and `verdict` is
+// the per-hop classification — useful for callers that want to know
+// which hop introduced the worst-of contribution to the overall
+// verdict.
+export interface AliasStep {
+    type:    'cname' | 'dname';
+    from:    string;
+    target:  string;
+    zone:    string;
+    verdict: Verdict;
+}
+
+// MAX_ALIAS_HOPS caps the number of CNAME / DNAME redirections a
+// single validate() call is willing to follow. RFC 1035 leaves the
+// limit to implementations; popular validators settle near 8–16. We
+// use 10 to match dnsdata-go and surface pathological chains quickly
+// while still serving real-world redirects (loop-detection by
+// re-occurring qname catches the trivial ping-pong cases earlier).
+export const MAX_ALIAS_HOPS = 10;
+
+// HopOutcome is the inner result of one validate_one_hop call.
+// Exactly one of {terminal verdict, alias} is meaningful: when alias
+// is non-null the outer Validate loop should redirect to alias.target
+// and run the next hop; otherwise the hop is terminal and verdict is
+// the answer.
+interface HopOutcome {
+    verdict:         Verdict;
+    bogusAt?:        string;
+    bogusReason?:    string;
+    insecureAt?:     string;
+    insecureReason?: string;
+    negativeReason?: string;
+    alias?:          AliasStep;
 }
 
 //////////////////////////////////////////////////////////// Verifier
@@ -239,12 +285,20 @@ export class Verifier {
     }
 
     // Walks the DNSSEC chain of trust from the root zone down to
-    // (qname, qtype), classifies the outcome, and returns the
-    // evidence gathered along the way.
+    // (qname, qtype), chasing CNAME / DNAME redirections up to
+    // [MAX_ALIAS_HOPS] hops, and returns the combined classification.
     //
-    // Returns Result.verdict = Bogus for verified-but-broken chains;
-    // throws (VerifierError or subclass) when the chain could not be
-    // walked at all (resolver failure, abort, invalid qname).
+    // The final verdict is the worst-of across every hop: any Bogus
+    // hop yields Bogus, any Insecure hop yields Insecure, any
+    // Indeterminate hop yields Indeterminate, otherwise Secure (or the
+    // terminal hop's secure-negative variant). Aliases are recorded
+    // in result.aliases in the order they were followed; the terminal
+    // qname is the `target` of the last alias.
+    //
+    // Returns Result.verdict = Bogus for verified-but-broken chains
+    // (including alias loops and hop-count overflow); throws
+    // (VerifierError or subclass) when the chain could not be walked
+    // at all (resolver failure, abort, invalid qname).
     async validate(qname: string, qtype: number, signal?: AbortSignal): Promise<Result> {
         if (!qname) {
             throw new VerifierInvalidQNameError('verifier: qname is empty');
@@ -254,138 +308,285 @@ export class Verifier {
             chain: [],
             evidence: { dnskeys: {}, dses: {}, rrsigs: {} },
         };
-        const normalizedQName = normalize_qname(qname);
 
+        let currentQname = normalize_qname(qname);
+        const seen = new Set<string>();
+        let combined: Verdict = Verdict.Indeterminate;
+        let combinedSet = false;
+
+        for (let hop = 0; hop <= MAX_ALIAS_HOPS; hop++) {
+            check_aborted(signal);
+            if (seen.has(currentQname)) {
+                result.verdict = Verdict.Bogus;
+                result.bogusAt = currentQname;
+                result.bogusReason = 'alias loop detected';
+                return result;
+            }
+            seen.add(currentQname);
+
+            const outcome = await this.validate_one_hop(currentQname, qtype, result, signal);
+
+            if (!combinedSet) {
+                combined = outcome.verdict;
+                combinedSet = true;
+            } else {
+                combined = combine_verdicts(combined, outcome.verdict);
+            }
+
+            if (outcome.alias) {
+                outcome.alias.verdict = outcome.verdict;
+                if (!result.aliases) result.aliases = [];
+                result.aliases.push(outcome.alias);
+                currentQname = outcome.alias.target;
+                continue;
+            }
+
+            result.verdict = combined;
+            // Carry the terminal hop's diagnostic strings so the
+            // reported location matches the final verdict.
+            if (outcome.bogusAt)       result.bogusAt = outcome.bogusAt;
+            if (outcome.bogusReason)   result.bogusReason = outcome.bogusReason;
+            if (outcome.insecureAt)    result.insecureAt = outcome.insecureAt;
+            if (outcome.insecureReason) result.insecureReason = outcome.insecureReason;
+            if (outcome.negativeReason) result.negativeReason = outcome.negativeReason;
+            return result;
+        }
+
+        // Alias chain longer than MAX_ALIAS_HOPS without resolving.
+        result.verdict = Verdict.Bogus;
+        result.bogusAt = currentQname;
+        result.bogusReason = `alias chain exceeded ${MAX_ALIAS_HOPS} hops`;
+        return result;
+    }
+
+    // validate_one_hop runs a single chain walk + leaf resolution
+    // against (qname, qtype). It mutates result.chain / result.evidence
+    // as it walks, but does NOT touch result.verdict / result.aliases
+    // — that is validate()'s responsibility.
+    private async validate_one_hop(qname: string, qtype: number, result: Result, signal?: AbortSignal): Promise<HopOutcome> {
         // Step 1: load + verify the root zone.
         const rootZone = new DNSSecZone();
         await this.load_records(rootZone, '.', TYPE_DNSKEY, result, signal);
 
         const rootKSK = this.match_ksk_with_anchors(rootZone);
         if (!rootKSK) {
-            result.verdict = Verdict.Bogus;
-            result.bogusAt = '.';
-            result.bogusReason = 'root KSK does not match any configured trust anchor';
-            return result;
+            return {
+                verdict: Verdict.Bogus,
+                bogusAt: '.',
+                bogusReason: 'root KSK does not match any configured trust anchor',
+            };
         }
         rootZone.add_sep('.');
-        const rootDnskeyOK = rootZone.verify_rrset('.', TYPE_DNSKEY, KeyVerifyMode.KSK);
-        if (!rootDnskeyOK) {
-            result.verdict = Verdict.Bogus;
-            result.bogusAt = '.';
-            result.bogusReason = 'root DNSKEY rrset signature did not verify';
-            return result;
+        if (!rootZone.verify_rrset('.', TYPE_DNSKEY, KeyVerifyMode.KSK)) {
+            return {
+                verdict: Verdict.Bogus,
+                bogusAt: '.',
+                bogusReason: 'root DNSKEY rrset signature did not verify',
+            };
         }
-        result.chain.push(summarize_zone('.', rootZone, rootKSK));
+        if (!zone_already_in_chain(result, '.')) {
+            result.chain.push(summarize_zone('.', rootZone, rootKSK));
+        }
 
-        // Step 2: descend through each label boundary that's actually
-        // a zone cut. Empty non-terminals (no DS, but a deeper name
-        // *is* a cut) MUST be skipped, not treated as the leaf — see
-        // the file header comment.
+        // Step 2: descend through each label boundary that is actually
+        // a zone cut. Empty non-terminals (no DS, but a deeper name IS
+        // a cut) must be skipped, not treated as the leaf.
         let currentZone = rootZone;
         let currentName = '.';
-        for (const childName of descendant_zones(normalizedQName)) {
+        for (const childName of descendant_zones(qname)) {
             check_aborted(signal);
 
             const dsCount = await this.load_records(currentZone, childName, TYPE_DS, result, signal);
             if (dsCount === 0) {
                 // Before treating childName as a non-cut, see whether
-                // the resolver also handed us NSEC/NSEC3 records that
+                // the resolver also handed us NSEC / NSEC3 records that
                 // prove no DS exists at childName (RFC 4035 §5.4 /
-                // RFC 5155 §8.9). A valid proof classifies the chain as
-                // Insecure at this delegation; absence of proof keeps
-                // the legacy "treat as no-cut and continue" behaviour
-                // so existing callers that ask for DS at a non-zone
-                // name still descend correctly.
+                // RFC 5155 §8.9). A valid proof classifies this
+                // delegation as Insecure; absence of proof keeps the
+                // legacy "continue past non-cut" behaviour so callers
+                // that ask for DS at a non-zone-cut name (e.g. qname
+                // itself) still descend correctly.
                 const proof = this.prove_no_ds(currentZone, childName);
                 if (proof) {
-                    result.verdict = Verdict.Insecure;
-                    result.insecureAt = childName;
-                    result.insecureReason = proof;
-                    return result;
+                    return {
+                        verdict: Verdict.Insecure,
+                        insecureAt: childName,
+                        insecureReason: proof,
+                    };
                 }
-                // childName is not a zone cut under currentZone — most
-                // often that's qname itself, but it can also be an
-                // empty non-terminal between two real cuts (e.g.
-                // "ad.jp." between "jp." and "wide.ad.jp."). Continue
-                // so the loop tries deeper descendants against the
-                // same currentZone; descent finalises only when (a)
-                // descendant_zones is exhausted or (b) a real cut is
-                // found and verified.
                 continue;
             }
 
-            const dsOK = currentZone.verify_rrset(childName, TYPE_DS);
-            if (!dsOK) {
-                result.verdict = Verdict.Bogus;
-                result.bogusAt = childName;
-                result.bogusReason = `DS rrset for ${childName} did not verify under ${currentName}`;
-                return result;
+            if (!currentZone.verify_rrset(childName, TYPE_DS)) {
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: childName,
+                    bogusReason: `DS rrset for ${childName} did not verify under ${currentName}`,
+                };
             }
 
-            // Load child DNSKEY rrset into a fresh zone parented at
-            // currentZone, so verify_delegation_signer can reach the
-            // parent's DS records.
             const childZone = new DNSSecZone();
             childZone.parent = currentZone;
             await this.load_records(childZone, childName, TYPE_DNSKEY, result, signal);
 
             const childKSK = match_ksk_with_ds(childZone, currentZone, childName);
             if (!childKSK) {
-                result.verdict = Verdict.Bogus;
-                result.bogusAt = childName;
-                result.bogusReason = `no DNSKEY at ${childName} matched a DS record in ${currentName}`;
-                return result;
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: childName,
+                    bogusReason: `no DNSKEY at ${childName} matched a DS record in ${currentName}`,
+                };
             }
             childZone.add_sep(childName);
-            const childDnskeyOK = childZone.verify_rrset(childName, TYPE_DNSKEY, KeyVerifyMode.KSK);
-            if (!childDnskeyOK) {
-                result.verdict = Verdict.Bogus;
-                result.bogusAt = childName;
-                result.bogusReason = `DNSKEY rrset for ${childName} did not verify under its own KSK`;
-                return result;
+            if (!childZone.verify_rrset(childName, TYPE_DNSKEY, KeyVerifyMode.KSK)) {
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: childName,
+                    bogusReason: `DNSKEY rrset for ${childName} did not verify under its own KSK`,
+                };
             }
 
-            result.chain.push(summarize_zone(childName, childZone, childKSK));
+            if (!zone_already_in_chain(result, childName)) {
+                result.chain.push(summarize_zone(childName, childZone, childKSK));
+            }
             currentZone = childZone;
             currentName = childName;
         }
 
-        // Step 3: leaf resolution against the deepest cut we descended
-        // into. qtype lookup happens here so the chain-walk only deals
-        // in DNSKEY / DS / RRSIG.
         check_aborted(signal);
-        const leafCount = await this.load_records(currentZone, normalizedQName, qtype, result, signal);
-        if (leafCount === 0) {
-            // No qtype rrset returned. Try NODATA first (matching NSEC
-            // / NSEC3 with qtype missing from the bitmap), then
-            // NXDOMAIN (covering NSEC / NSEC3 plus wildcard non-
-            // existence). A successful proof produces a positive
-            // classification rather than the legacy Indeterminate.
-            const noData = this.prove_no_data(currentZone, normalizedQName, qtype);
-            if (noData) {
-                result.verdict = Verdict.SecureNoData;
-                result.negativeReason = noData;
-                return result;
+        return this.resolve_leaf(currentZone, currentName, qname, qtype, result, signal);
+    }
+
+    // resolve_leaf handles the final step of a hop: load qname/qtype
+    // into currentZone and either return a terminal verdict or surface
+    // an alias hop. CNAME at qname and DNAME at any proper ancestor of
+    // qname are followed; a missing rrset falls through to NSEC /
+    // NSEC3 negative proofs.
+    private async resolve_leaf(currentZone: DNSSecZone, currentName: string, qname: string, qtype: number, result: Result, signal?: AbortSignal): Promise<HopOutcome> {
+        const added = await this.load_records(currentZone, qname, qtype, result, signal);
+        if (added > 0) {
+            if (!currentZone.verify_rrset(qname, qtype)) {
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: currentName,
+                    bogusReason: `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`,
+                };
             }
-            const nxDomain = this.prove_nx_domain(currentZone, normalizedQName);
-            if (nxDomain) {
-                result.verdict = Verdict.SecureNXDomain;
-                result.negativeReason = nxDomain;
-                return result;
+            return { verdict: Verdict.Secure };
+        }
+
+        // qtype rrset is absent. Look for a CNAME (at qname) or DNAME
+        // (at a proper ancestor) BEFORE declaring NODATA. The resolver
+        // may have placed those records into currentZone while answering
+        // the qtype query — real DNS responses include CNAME/DNAME at
+        // the same name even when the question asked for, say, A.
+        // The Validate outer loop will start a fresh chain walk for the
+        // rewritten target on the next hop.
+        const cname = this.try_cname(currentZone, currentName, qname);
+        if (cname) return cname;
+        const dname = this.try_dname(currentZone, currentName, qname);
+        if (dname) return dname;
+
+        // No alias — fall back to negative-existence proofs.
+        const noData = this.prove_no_data(currentZone, qname, qtype);
+        if (noData) {
+            return { verdict: Verdict.SecureNoData, negativeReason: noData };
+        }
+        const nxDomain = this.prove_nx_domain(currentZone, qname);
+        if (nxDomain) {
+            return { verdict: Verdict.SecureNXDomain, negativeReason: nxDomain };
+        }
+        return { verdict: Verdict.Indeterminate };
+    }
+
+    // try_cname looks for a CNAME rrset at qname inside currentZone,
+    // verifies its signature against currentZone's keys, and packages
+    // it as an AliasStep hop for validate()'s outer loop to chase.
+    //
+    // Returns null when no CNAME is present — the caller then tries
+    // DNAME or negative-proof handling. A CNAME present but failing
+    // signature verification returns a hop whose verdict is Bogus.
+    private try_cname(currentZone: DNSSecZone, currentName: string, qname: string): HopOutcome | null {
+        const rrset = currentZone.find_rrset(qname, TYPE_CNAME);
+        if (rrset.length === 0) return null;
+
+        const target = normalize_qname(rrset[0].value);
+        if (target === '' || target === '.') {
+            return {
+                verdict: Verdict.Bogus,
+                bogusAt: qname,
+                bogusReason: 'CNAME target is empty',
+            };
+        }
+        if (!currentZone.verify_rrset(qname, TYPE_CNAME)) {
+            return {
+                verdict: Verdict.Bogus,
+                bogusAt: currentName,
+                bogusReason: `RRSIG over ${qname}/CNAME did not verify`,
+            };
+        }
+        return {
+            verdict: Verdict.Secure,
+            alias: {
+                type:   'cname',
+                from:   qname,
+                target,
+                zone:   currentName,
+                verdict: Verdict.Secure,
+            },
+        };
+    }
+
+    // try_dname looks for a DNAME at any proper ancestor of qname.
+    // RFC 6672 §3 specifies that a DNAME at OWNER rewrites every name
+    // BELOW (not equal to) owner under the DNAME's target. Walks
+    // qname's ancestors longest-first; the first one carrying a DNAME
+    // wins. The synthesised qname is strict suffix replacement of
+    // OWNER with TARGET.
+    private try_dname(currentZone: DNSSecZone, currentName: string, qname: string): HopOutcome | null {
+        for (const anc of ancestors_of(qname)) {
+            if (equal_canonical_names(anc, qname)) {
+                // DNAME at qname itself does not synthesise (RFC 6672 §3.1).
+                continue;
             }
-            // No proof — fall back to Indeterminate (the resolver may
-            // simply not have returned the negative records).
-            return result;
+            const rrset = currentZone.find_rrset(anc, TYPE_DNAME);
+            if (rrset.length === 0) continue;
+
+            const target = normalize_qname(rrset[0].value);
+            if (target === '' || target === '.') {
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: anc,
+                    bogusReason: 'DNAME target is empty',
+                };
+            }
+            if (!currentZone.verify_rrset(anc, TYPE_DNAME)) {
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: currentName,
+                    bogusReason: `RRSIG over ${anc}/DNAME did not verify`,
+                };
+            }
+            const synth = synthesise_dname_target(qname, anc, target);
+            if (synth === '') {
+                return {
+                    verdict: Verdict.Bogus,
+                    bogusAt: anc,
+                    bogusReason: `DNAME at ${anc} could not synthesise target for ${qname}`,
+                };
+            }
+            return {
+                verdict: Verdict.Secure,
+                alias: {
+                    type:   'dname',
+                    from:   qname,
+                    target: synth,
+                    zone:   currentName,
+                    verdict: Verdict.Secure,
+                },
+            };
         }
-        const leafOK = currentZone.verify_rrset(normalizedQName, qtype);
-        if (!leafOK) {
-            result.verdict = Verdict.Bogus;
-            result.bogusAt = currentName;
-            result.bogusReason = `RRSIG over ${normalizedQName}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`;
-            return result;
-        }
-        result.verdict = Verdict.Secure;
-        return result;
+        return null;
     }
 
     // Issues one resolver Query and appends every returned record to
@@ -927,4 +1128,68 @@ function bytes_equal(a: Uint8Array, b: Uint8Array): boolean {
         if (a[i] !== b[i]) return false;
     }
     return true;
+}
+
+//////////////////////////////////////////////////////////// alias chasing
+
+// combine_verdicts merges a per-hop verdict into the running total
+// using a worst-of policy:
+//
+//   Bogus > Insecure > Indeterminate > Secure (any kind)
+//
+// The two secure-negative variants (SecureNoData, SecureNXDomain) are
+// treated as equivalent to Secure for the purposes of merging — both
+// indicate "the chain reached a signed conclusion". When nothing
+// stronger overrides, the most specific Secure flavour (i.e. a
+// secure-negative produced by the terminal hop) wins, so callers see
+// the most informative successful classification.
+//
+// Exported for tests.
+export function combine_verdicts(a: Verdict, b: Verdict): Verdict {
+    if (a === Verdict.Bogus || b === Verdict.Bogus) return Verdict.Bogus;
+    if (a === Verdict.Insecure || b === Verdict.Insecure) return Verdict.Insecure;
+    if (a === Verdict.Indeterminate || b === Verdict.Indeterminate) return Verdict.Indeterminate;
+    // Both are some flavour of Secure.
+    if (b === Verdict.Secure) return a;
+    return b;
+}
+
+// zone_already_in_chain reports whether result.chain already contains
+// a ZoneStep for zoneName. Used during alias chasing so multiple hops
+// over the same parent zones (e.g. "." and "com.") don't duplicate
+// entries.
+function zone_already_in_chain(result: Result, zoneName: string): boolean {
+    for (const step of result.chain) {
+        if (step.zone === zoneName) return true;
+    }
+    return false;
+}
+
+// synthesise_dname_target rewrites qname per RFC 6672 §5.3.1: the
+// labels of qname below owner are appended to the DNAME target.
+//
+// Example:
+//
+//   qname  = "foo.bar.example.com."
+//   owner  = "example.com."
+//   target = "elsewhere.net."
+//   →        "foo.bar.elsewhere.net."
+//
+// Returns "" when qname does not strictly fall under owner (mismatch
+// at any aligned label, or qname.length <= owner.length); the caller
+// treats that as Bogus rather than silent fall-through.
+//
+// Exported for tests.
+export function synthesise_dname_target(qname: string, owner: string, target: string): string {
+    const qLabels = canon_labels_trim(qname);
+    const oLabels = canon_labels_trim(owner);
+    const tLabels = canon_labels_trim(target);
+    if (qLabels.length <= oLabels.length) return '';
+    for (let i = 0; i < oLabels.length; i++) {
+        const ql = qLabels[qLabels.length - oLabels.length + i];
+        const ol = oLabels[i];
+        if (ql.toLowerCase() !== ol.toLowerCase()) return '';
+    }
+    const prefix = qLabels.slice(0, qLabels.length - oLabels.length);
+    return prefix.concat(tLabels).join('.') + '.';
 }
