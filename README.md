@@ -152,10 +152,11 @@ are first-class implementations — neither is permanently "upstream":
   wildcard-synthesised positive-answer support all originated in
   `dnsdata-go` (v0.1.0 – v0.2.0) and are tracked here as
   [#5](https://github.com/shigeya/dnsdata-js/issues/5) –
-  [#10](https://github.com/shigeya/dnsdata-js/issues/10). UP-001 and UP-002
-  have since been ported back in PRs
-  [#17](https://github.com/shigeya/dnsdata-js/pull/17) and
-  [#19](https://github.com/shigeya/dnsdata-js/pull/19); UP-003 through
+  [#10](https://github.com/shigeya/dnsdata-js/issues/10). UP-001, UP-002,
+  and UP-003 have since been ported back in PRs
+  [#17](https://github.com/shigeya/dnsdata-js/pull/17),
+  [#19](https://github.com/shigeya/dnsdata-js/pull/19), and the PR closing
+  [#7](https://github.com/shigeya/dnsdata-js/issues/7); UP-004 through
   UP-006 are queued. The robustness fixes catalogued as UF-001..004 in the
   Go-side `UPSTREAM_FEEDBACK.md` landed here through PRs
   [#11](https://github.com/shigeya/dnsdata-js/pull/11),
@@ -190,7 +191,7 @@ mechanical:
 | `verifier/`                               | `verifier.ts`                        | Chain-of-trust walker with pluggable `Resolver` |
 | `types/`                                  | `dns_type_table.ts`                  | RR-type / class / rcode / algorithm tables |
 | `dnssec/anchors.go`                       | `dnssec_key_loader.ts`, `root_anchors.ts` | Root trust anchors |
-| `resolver/auth/`                          | (none yet)                           | UDP / TCP authoritative-DNS client (UP-003 / [#7](https://github.com/shigeya/dnsdata-js/issues/7)) |
+| `resolver/auth/`                          | `resolver_auth.ts`                   | UDP / TCP authoritative-DNS client with TC-fallback + failover (UP-003 / [#7](https://github.com/shigeya/dnsdata-js/issues/7)) |
 | (distributed via per-package `errors.go`) | `dns_exception.ts`                   | TS-specific exception hierarchy (`DNSWireError`, `UnknownOpCodeError`, …); Go uses sentinel `errors.Is`-friendly vars per package |
 | (folded into `wire/` package)             | `dns_wire_util.ts`                   | TS-specific wire helpers; folded into Go's `wire/` package |
 | (not yet ported)                          | `rr/*.ts`                            | Modern RR handlers (CERT, CSYNC, DANE/TLSA/SMIMEA, EUI48/64, HINFO, LOC, NAPTR, OPENPGPKEY, OPT, RP, SSHFP, SVCB/HTTPS, URI) — TS only at this time |
