@@ -137,6 +137,45 @@ The test suite currently has **269 tests across 22 suites** covering wire format
 
 - **[dnsdata-go](https://github.com/shigeya/dnsdata-go)** — Go sibling implementation. Shares the `~/.dnsdata/` user-data location with this project.
 
+## Sibling implementation
+
+`dnsdata-js` and [`dnsdata-go`](https://github.com/shigeya/dnsdata-go) are sibling implementations of the same library, maintained side-by-side. Both are first-class implementations — neither is permanently "upstream":
+
+- Either side may **originate** a new feature; the originating side is the reference for that feature's behaviour until both sides ship.
+- Bug-fix feedback flows both directions (Go ↔ TS) via each repo's `UPSTREAM_FEEDBACK.md`.
+- Public API surface, wire output, and presentation strings are kept **byte-for-byte equivalent**, even where each language's idioms differ (e.g. `context.Context` ↔ `AbortSignal`, sentinel errors ↔ `instanceof` subclasses, `[]byte` ↔ `Uint8Array`).
+
+### Cross-repo module mapping
+
+Each Go file maps to a single TS file so port-backs are mechanical:
+
+| Go (`dnsdata-go`) | TS (`dnsdata-js/packages/core/src/lib/`) | Notes |
+|---|---|---|
+| `wire/name.go`            | `dns_wire.ts` (encode/decode) | `domain_name2wire`, `wire2domain_name` |
+| `wire/name_decompress.go` | `dns_wire.ts` (`parse_domain_name`) | RFC 1035 §4.1.4 compression-pointer decoder |
+| `wire/message.go`         | `dns_message.ts`                | `parse_message`, `Header`, `Question`, `RawRR`, `RawMessage` |
+| `wire/rdata.go`           | `rdata_decoder.ts`              | `rdata_to_string`, RFC 3597 fallback |
+| `zone/rr.go`              | `dns_zone.ts`                   | `ResourceRecord`, `Zone`, handler registry |
+| `dnssec/zone.go`          | `dnssec_zone.ts`                | `DNSSecZone`, chain-of-trust verification helpers |
+| `dnssec/key.go` / `rrsig.go` / `ds.go` / `nsec.go` | `dnssec_rr.ts` | `DNSKey`, `RRSig`, `DNSRR_DS`, `DNSRR_NSEC`, `DNSRR_NSEC3` |
+| `verifier/`               | `verifier.ts`                   | Chain-of-trust walker with pluggable `Resolver` |
+| `types/types.go`          | `dns_type_table.ts`             | RR-type / class / rcode tables |
+
+### Drift policy
+
+Drift that is **accepted** (idiomatic translation): control flow, error mechanics, naming case, value-vs-exception conventions, primitive types.
+
+Drift that is **not accepted** (must be kept in sync): API surface (function names, argument order, optionality semantics), output formats (wire bytes, presentation strings), supported RR-type set, error category meanings.
+
+### Feature origin tagging
+
+When you propose or implement a new feature in either repo, label the Issue / PR with the originator:
+
+- *Originated in dnsdata-go vX.Y.Z* — first shipped on the Go side
+- *Originated in dnsdata-js vX.Y.Z* — first shipped on the TS side
+
+This makes it easy to find the reference implementation at any later point.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

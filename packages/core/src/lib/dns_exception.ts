@@ -29,6 +29,42 @@ export class DNSWireError extends CustomError {
     }
 };
 
+// RFC 1035 §4.1.4 compression-pointer cycle. Surfaces when a pointer
+// chain in parse_domain_name revisits an offset it has already
+// traversed, or when the hop cap is exceeded on pathological input.
+export class DNSWirePointerLoopError extends DNSWireError {
+    public constructor(message? : string) {
+        super(message);
+    }
+};
+
+// RFC 1035 §4.1.4 requires compression pointers to point *earlier* in
+// the message. A pointer that points at or past its own position is
+// malformed (and a common malicious-input shape).
+export class DNSWirePointerForwardError extends DNSWireError {
+    public constructor(message? : string) {
+        super(message);
+    }
+};
+
+// parse_message / parse_rr detected a structurally invalid DNS
+// message (header truncated, section RR header truncated, RDATA
+// length overruns the buffer, unsupported QDCount, etc.).
+export class DNSMessageMalformedError extends DNSWireError {
+    public constructor(message? : string) {
+        super(message);
+    }
+};
+
+// rdata_to_string saw an RDATA payload whose length / shape does not
+// match the per-type encoding (e.g. A rdata length != 4, NSEC3 salt
+// runs off the end).
+export class DNSRDataDecodeError extends DNSWireError {
+    public constructor(message? : string) {
+        super(message);
+    }
+};
+
 // Unknown enum-value errors thrown by the dns_type_table converters.
 // Callers can discriminate via `instanceof` instead of message matching
 // (RangeError stays in the prototype chain for back-compat with callers
