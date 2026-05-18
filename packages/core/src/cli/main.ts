@@ -20,7 +20,7 @@ import {
     default_providers,
 } from '../resolver/doh';
 import { AuthClient } from '../resolver/auth/resolver_auth';
-import { Verifier, Resolver, Result } from '../verifier/verifier';
+import { Verifier, Resolver, Result } from '../verifier';
 import { ResourceRecord } from '../zone/dns_zone';
 import { format_output } from './output';
 import { fetch_and_update_root_anchors } from './root_anchor_updater';

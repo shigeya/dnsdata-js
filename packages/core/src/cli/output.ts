@@ -8,7 +8,7 @@
 
 import { ResourceRecord } from '../zone/dns_zone';
 import { RRTypeToString } from '../types/dns_type_table';
-import { Result, AliasStep, KeySummary, DSSummary, ZoneStep } from '../verifier/verifier';
+import { Result, AliasStep, KeySummary, DSSummary, ZoneStep } from '../verifier';
 
 export interface OutputContext {
     fqdn: string;

@@ -27,7 +27,7 @@ import {
     combine_verdicts,
     synthesise_dname_target,
     MAX_ALIAS_HOPS,
-} from '../../src/verifier/verifier';
+} from '../../src/verifier';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS = StringToRRType('DS');
