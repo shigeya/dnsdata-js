@@ -1,77 +1,115 @@
-import { DNSAnswer, DNSResponse } from './resolver';
-import { RRTypeToString, RCodeToString } from '../lib/dns_type_table';
-import { VerificationResult } from './dnssec_verifier';
+// CLI output formatting.
+//
+// Renders a query result + an optional DNSSEC chain Verifier verdict
+// in a dig-like layout. The new CLI (P2 of REFACTOR_PLAN.md) consumes
+// ResourceRecord[] from lib/resolver/{doh,auth} directly and a
+// six-state lib/verifier.Result rather than the legacy
+// VerificationResult.
 
-export interface OutputOptions {
+import { ResourceRecord } from '../lib/dns_zone';
+import { RRTypeToString } from '../lib/dns_type_table';
+import { Result, AliasStep, KeySummary, DSSummary, ZoneStep } from '../lib/verifier';
+
+export interface OutputContext {
     fqdn: string;
     rrtype: string;
-    method: string;
-    provider?: string;
+    method_desc: string;
+    records: readonly ResourceRecord[];
+    result?: Result;
+    verify_error?: string;
 }
 
-function padRight(s: string, len: number): string {
+function pad_right(s: string, len: number): string {
     return s.length >= len ? s : s + ' '.repeat(len - s.length);
 }
 
-function formatAnswer(ans: DNSAnswer): string {
-    const typeName = (() => {
-        try { return RRTypeToString(ans.type); }
-        catch { return String(ans.type); }
-    })();
-    return `${padRight(ans.name, 24)} ${String(ans.TTL).padStart(6)}  IN  ${padRight(typeName, 8)} ${ans.data}`;
+function type_name(type: number): string {
+    try { return RRTypeToString(type); }
+    catch { return String(type); }
 }
 
-export function formatOutput(
-    opts: OutputOptions,
-    response: DNSResponse,
-    verification?: VerificationResult,
-): string {
+function format_record(rr: ResourceRecord): string {
+    return `${pad_right(rr.label, 24)} ${String(rr.ttl).padStart(6)}  IN  ${pad_right(type_name(rr.type), 8)} ${rr.value}`;
+}
+
+function format_key(k: KeySummary): string {
+    return `${k.keyTag}/${k.algorithm}${k.sep ? '(KSK)' : ''}`;
+}
+
+function format_ds(d: DSSummary): string {
+    return `${d.keyTag}/${d.algorithm}/${d.digestType}`;
+}
+
+function format_chain_step(step: ZoneStep): string {
+    const parts: string[] = [];
+    if (step.dnskeys && step.dnskeys.length > 0) {
+        parts.push(`DNSKEY=[${step.dnskeys.map(format_key).join(', ')}]`);
+    }
+    if (step.dsDigests && step.dsDigests.length > 0) {
+        parts.push(`DS=[${step.dsDigests.map(format_ds).join(', ')}]`);
+    }
+    if (step.signedBy) {
+        parts.push(`signed-by=${format_key(step.signedBy)}`);
+    }
+    const zone = step.zone || '.';
+    return parts.length > 0 ? `${zone} ${parts.join(', ')}` : zone;
+}
+
+function format_alias(a: AliasStep): string {
+    return `${a.type.toUpperCase()} ${a.from} -> ${a.target} (zone=${a.zone}, ${a.verdict})`;
+}
+
+export function format_output(ctx: OutputContext): string {
     const lines: string[] = [];
 
-    const rcodeStr = (() => {
-        try { return RCodeToString(response.status); }
-        catch { return String(response.status); }
-    })();
-
-    const methodDesc = opts.method === 'doh'
-        ? `DoH (${opts.provider || 'google'})`
-        : 'DNS (system resolver)';
-
-    lines.push(`; <<>> dnsdata lookup <<>> ${opts.fqdn} ${opts.rrtype}`);
-    lines.push(`;; Method: ${methodDesc}`);
-    lines.push(`;; Status: ${rcodeStr}`);
+    lines.push(`; <<>> dnsdata lookup <<>> ${ctx.fqdn} ${ctx.rrtype}`);
+    lines.push(`;; Method: ${ctx.method_desc}`);
     lines.push('');
 
-    if (response.answers.length > 0) {
-        lines.push(';; ANSWER SECTION:');
-        for (const ans of response.answers) {
-            lines.push(formatAnswer(ans));
-        }
+    if (ctx.records.length > 0) {
+        lines.push(';; RECORDS:');
+        for (const rr of ctx.records) lines.push(format_record(rr));
+        lines.push('');
+    } else {
+        lines.push(';; No records returned.');
         lines.push('');
     }
 
-    if (response.authority.length > 0) {
-        lines.push(';; AUTHORITY SECTION:');
-        for (const ans of response.authority) {
-            lines.push(formatAnswer(ans));
-        }
+    if (ctx.verify_error) {
+        lines.push(';; DNSSEC VERIFICATION:');
+        lines.push(`;;   Error: ${ctx.verify_error}`);
         lines.push('');
+        return lines.join('\n');
     }
 
-    if (response.answers.length === 0 && response.authority.length === 0) {
-        lines.push(';; No records found.');
-        lines.push('');
-    }
+    if (ctx.result) {
+        lines.push(';; DNSSEC VERIFICATION:');
+        lines.push(`;;   Verdict: ${ctx.result.verdict}`);
 
-    if (verification) {
-        // Check if details already contain a Result line (chain verification)
-        const hasResult = verification.details.some(d => d.startsWith('Result:'));
-        lines.push(hasResult ? ';; DNSSEC VERIFICATION (chain):' : ';; DNSSEC VERIFICATION:');
-        for (const detail of verification.details) {
-            lines.push(`;;   ${detail}`);
+        if (ctx.result.insecureAt) {
+            const reason = ctx.result.insecureReason ? ` (${ctx.result.insecureReason})` : '';
+            lines.push(`;;   Insecure at: ${ctx.result.insecureAt}${reason}`);
         }
-        if (!hasResult) {
-            lines.push(`;;   Result: ${verification.verified ? 'SECURE' : 'INSECURE'}`);
+        if (ctx.result.bogusAt) {
+            const reason = ctx.result.bogusReason ? ` (${ctx.result.bogusReason})` : '';
+            lines.push(`;;   Bogus at: ${ctx.result.bogusAt}${reason}`);
+        }
+        if (ctx.result.negativeReason) {
+            lines.push(`;;   Negative proof: ${ctx.result.negativeReason}`);
+        }
+        if (ctx.result.aliases && ctx.result.aliases.length > 0) {
+            lines.push(`;;   Aliases:`);
+            for (const a of ctx.result.aliases) lines.push(`;;     ${format_alias(a)}`);
+        }
+        if (ctx.result.wildcard) {
+            const w = ctx.result.wildcard;
+            lines.push(`;;   Wildcard: ${w.source} (closest=${w.closestEncloser}, next-closer=${w.nextCloser}, proof=${w.proofReason})`);
+        }
+        if (ctx.result.chain.length > 0) {
+            lines.push(`;;   Chain:`);
+            for (const step of ctx.result.chain) {
+                lines.push(`;;     ${format_chain_step(step)}`);
+            }
         }
         lines.push('');
     }

@@ -1,10 +1,12 @@
-// Fetch and update IANA root trust anchors
+// Fetch and update IANA root trust anchors.
 //
-// Downloads root-anchors.xml from IANA, parses DS records,
-// fetches root DNSKEY via DoH, and saves to ~/.dnsdata/root-anchors.json.
+// Downloads root-anchors.xml from IANA, parses DS records, fetches
+// the root DNSKEY rrset via DoH (using the new lib/resolver/doh
+// client), and writes ~/.dnsdata/root-anchors.json. Stays in cli/
+// because it owns user-facing filesystem and stderr output.
 
 import * as https from 'https';
-import { DoHResolver, DoHProvider } from './resolver_doh';
+import { DoHClient } from '../lib/resolver/doh';
 import { StringToRRType } from '../lib/dns_type_table';
 import {
     RootAnchors,
@@ -15,7 +17,7 @@ import {
     getRootAnchorsPath,
 } from '../lib/root_anchors';
 
-function httpsGet(url: string): Promise<string> {
+function https_get(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
         const req = https.get(url, (res) => {
             if (res.statusCode !== 200) {
@@ -34,24 +36,22 @@ function httpsGet(url: string): Promise<string> {
     });
 }
 
-// Simple XML parser for root-anchors.xml — extract KeyDigest entries
-function parseRootAnchorsXML(xml: string): RootAnchorDS[] {
+function parse_root_anchors_xml(xml: string): RootAnchorDS[] {
     const results: RootAnchorDS[] = [];
-    // Match each <KeyDigest ...>...</KeyDigest> block
-    const keyDigestRe = /<KeyDigest[^>]*>([\s\S]*?)<\/KeyDigest>/g;
+    const key_digest_re = /<KeyDigest[^>]*>([\s\S]*?)<\/KeyDigest>/g;
     let match;
-    while ((match = keyDigestRe.exec(xml)) !== null) {
+    while ((match = key_digest_re.exec(xml)) !== null) {
         const block = match[1];
-        const keyTag = extractXMLField(block, 'KeyTag');
-        const algorithm = extractXMLField(block, 'Algorithm');
-        const digestType = extractXMLField(block, 'DigestType');
-        const digest = extractXMLField(block, 'Digest');
+        const key_tag = extract_xml_field(block, 'KeyTag');
+        const algorithm = extract_xml_field(block, 'Algorithm');
+        const digest_type = extract_xml_field(block, 'DigestType');
+        const digest = extract_xml_field(block, 'Digest');
 
-        if (keyTag && algorithm && digestType && digest) {
+        if (key_tag && algorithm && digest_type && digest) {
             results.push({
-                keyTag: parseInt(keyTag),
+                keyTag: parseInt(key_tag),
                 algorithm: parseInt(algorithm),
-                digestType: parseInt(digestType),
+                digestType: parseInt(digest_type),
                 digest: digest.replace(/\s+/g, '').toUpperCase(),
             });
         }
@@ -59,80 +59,67 @@ function parseRootAnchorsXML(xml: string): RootAnchorDS[] {
     return results;
 }
 
-function extractXMLField(block: string, tag: string): string | null {
+function extract_xml_field(block: string, tag: string): string | null {
     const re = new RegExp(`<${tag}>\\s*([^<]+?)\\s*</${tag}>`);
     const m = block.match(re);
     return m ? m[1].trim() : null;
 }
 
-// Algorithm mnemonic to number mapping (for normalizing DNSKEY data from DoH)
-const ALGO_NAME_TO_NUM: Record<string, string> = {
-    'RSAMD5': '1', 'DH': '2', 'DSA': '3', 'RSASHA1': '5',
-    'DSA-NSEC3-SHA1': '6', 'RSASHA1-NSEC3-SHA1': '7', 'RSASHA256': '8',
-    'RSASHA512': '10', 'ECC-GOST': '12', 'ECDSAP256SHA256': '13',
-    'ECDSAP384SHA384': '14', 'ED25519': '15', 'ED448': '16',
-};
-
-export async function fetchAndUpdateRootAnchors(dohProvider: DoHProvider): Promise<void> {
+// fetch_and_update_root_anchors fetches IANA's root-anchors.xml, runs
+// a DoH DNSKEY lookup against the root, and rewrites the on-disk
+// anchor file. Providers default to DoHClient's built-in list
+// (Google → Cloudflare → Quad9).
+export async function fetch_and_update_root_anchors(providers?: readonly string[]): Promise<void> {
     console.error('Fetching root-anchors.xml from IANA...');
-
-    // Fetch IANA root-anchors.xml
-    const xml = await httpsGet('https://data.iana.org/root-anchors/root-anchors.xml');
-    const dsRecords = parseRootAnchorsXML(xml);
-
-    if (dsRecords.length === 0) {
+    const xml = await https_get('https://data.iana.org/root-anchors/root-anchors.xml');
+    const ds_records = parse_root_anchors_xml(xml);
+    if (ds_records.length === 0) {
         throw new Error('No DS records found in root-anchors.xml');
     }
+    console.error(`Found ${ds_records.length} DS record(s): keytags=${ds_records.map(d => d.keyTag).join(', ')}`);
 
-    console.error(`Found ${dsRecords.length} DS record(s): keytags=${dsRecords.map(d => d.keyTag).join(', ')}`);
-
-    // Fetch root DNSKEY via DoH
     console.error('Fetching root DNSKEY via DoH...');
-    const doh = new DoHResolver(dohProvider);
-    const dnskeyType = StringToRRType('DNSKEY');
-    const dnskeyResp = await doh.resolve('.', dnskeyType);
+    const doh = providers && providers.length > 0
+        ? new DoHClient({ providers })
+        : new DoHClient();
+    const dnskey_type = StringToRRType('DNSKEY');
+    const records = await doh.resolve('.', dnskey_type);
 
     const dnskeys: RootAnchorDNSKEY[] = [];
-    for (const ans of dnskeyResp.answers) {
-        if (ans.type === dnskeyType) {
-            // Parse: "{flags} {protocol} {algorithm} {base64key}"
-            const parts = ans.data.split(/\s+/);
-            if (parts.length >= 4) {
-                let algo = parts[2];
-                const algoNum = ALGO_NAME_TO_NUM[algo.toUpperCase()];
-                if (algoNum) algo = algoNum;
-                dnskeys.push({
-                    flags: parseInt(parts[0]),
-                    protocol: parseInt(parts[1]),
-                    algorithm: parseInt(algo),
-                    publicKey: parts.slice(3).join(''),
-                });
-            }
-        }
+    for (const rr of records) {
+        if (rr.type !== dnskey_type) continue;
+        // ResourceRecord.value is the rdata presentation form
+        // "{flags} {protocol} {algorithm} {base64key}" — the wire
+        // decoder always emits numeric algorithm, so no mnemonic
+        // normalisation is needed.
+        const parts = rr.value.split(/\s+/);
+        if (parts.length < 4) continue;
+        dnskeys.push({
+            flags: parseInt(parts[0]),
+            protocol: parseInt(parts[1]),
+            algorithm: parseInt(parts[2]),
+            publicKey: parts.slice(3).join(''),
+        });
     }
-
     console.error(`Found ${dnskeys.length} DNSKEY record(s)`);
 
-    // Load current anchors for comparison
-    const { anchors: currentAnchors } = loadRootAnchors();
+    const { anchors: current_anchors } = loadRootAnchors();
 
-    const newAnchors: RootAnchors = {
+    const new_anchors: RootAnchors = {
         lastUpdated: new Date().toISOString().slice(0, 10),
         source: 'iana',
-        ds: dsRecords,
-        dnskeys: dnskeys,
+        ds: ds_records,
+        dnskeys,
     };
 
-    // Show diff
-    const currentKeyTags = currentAnchors.ds.map(d => d.keyTag).sort();
-    const newKeyTags = newAnchors.ds.map(d => d.keyTag).sort();
-    if (JSON.stringify(currentKeyTags) !== JSON.stringify(newKeyTags)) {
-        console.error(`DS key tags changed: ${currentKeyTags.join(', ')} -> ${newKeyTags.join(', ')}`);
+    const current_keytags = current_anchors.ds.map(d => d.keyTag).sort();
+    const new_keytags = new_anchors.ds.map(d => d.keyTag).sort();
+    if (JSON.stringify(current_keytags) !== JSON.stringify(new_keytags)) {
+        console.error(`DS key tags changed: ${current_keytags.join(', ')} -> ${new_keytags.join(', ')}`);
     } else {
-        console.error(`DS key tags unchanged: ${newKeyTags.join(', ')}`);
+        console.error(`DS key tags unchanged: ${new_keytags.join(', ')}`);
     }
 
-    // Save
-    saveRootAnchors(newAnchors);
+    saveRootAnchors(new_anchors);
     console.error(`Root anchors saved to ${getRootAnchorsPath()}`);
 }
