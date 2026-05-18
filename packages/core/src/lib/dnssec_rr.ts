@@ -8,6 +8,17 @@ import { domain_name2wire } from './dns_wire';
 import { StringToRRType, RRTypeToString } from './dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from './dns_zone';
 import { DNSZonePresentationFormatError } from './dns_exception';
+import {
+    compare_canonical_names,
+    equal_canonical_names,
+} from './dnssec_util';
+
+// Cached RR-type codes used by the negative-proof primitives. Resolved
+// at module load time so the hot path is a numeric comparison.
+const TYPE_NS    = StringToRRType('NS');
+const TYPE_DS    = StringToRRType('DS');
+const TYPE_SOA   = StringToRRType('SOA');
+const TYPE_CNAME = StringToRRType('CNAME');
 
 // Check if algorithm is EdDSA-based
 function is_eddsa_algorithm(algorithm: number): boolean {
@@ -545,6 +556,67 @@ export class DNSRR_NSEC extends ResourceRecordHandler {
         return this.covered_types.indexOf(type) !== -1;
     }
 
+    // matches_name reports whether qname equals owner in canonical-name
+    // order (RFC 4034 §6.1). Owner is passed explicitly because the
+    // handler does not retain its label independently of its parent RR.
+    matches_name(owner: string, qname: string): boolean {
+        return equal_canonical_names(owner, qname);
+    }
+
+    // covers_name reports whether qname falls strictly between owner and
+    // next_domain in canonical-name order (RFC 4035 §5.4 "covers").
+    // Equal to either endpoint returns false — matching denial is a
+    // distinct concept.
+    //
+    // The "wrap" case where next_domain <= owner in canonical order is
+    // recognised as the zone-trailing NSEC and treated specially: qname
+    // is covered if it is greater than owner OR less than next_domain.
+    covers_name(owner: string, qname: string): boolean {
+        const cmp_owner = compare_canonical_names(qname, owner);
+        const cmp_next = compare_canonical_names(qname, this.next_domain);
+        if (cmp_owner === 0 || cmp_next === 0) return false;
+        if (compare_canonical_names(this.next_domain, owner) <= 0) {
+            // Wrap-around NSEC at the zone end.
+            return cmp_owner > 0 || cmp_next < 0;
+        }
+        return cmp_owner > 0 && cmp_next < 0;
+    }
+
+    // proves_no_data reports whether the bitmap shape is consistent with
+    // a NODATA proof for qtype: qtype is absent AND CNAME is absent
+    // (because a CNAME would otherwise have produced an answer rather
+    // than NODATA, RFC 4035 §5.4).
+    //
+    // The caller must separately confirm this NSEC's owner equals qname
+    // (matching denial) — that is what makes the absent qtype a
+    // statement about qname rather than about a neighbour.
+    proves_no_data(qtype: number): boolean {
+        if (qtype === TYPE_CNAME) {
+            // The caller is asking specifically about CNAME — the
+            // absence of CNAME in the bitmap is itself the proof.
+            return !this.covers_type(TYPE_CNAME);
+        }
+        return !this.covers_type(qtype) && !this.covers_type(TYPE_CNAME);
+    }
+
+    // proves_no_ds reports whether the bitmap shape matches a signed
+    // no-DS delegation: NS present, DS absent, SOA absent. The SOA
+    // absence distinguishes a delegation point from a zone apex NSEC;
+    // the NS presence guards against accepting an NSEC at a name the
+    // parent never delegated. Callers must separately confirm
+    // matching or covering denial for the child name.
+    proves_no_ds(): boolean {
+        let has_ns = false;
+        let has_ds = false;
+        let has_soa = false;
+        for (const t of this.covered_types) {
+            if (t === TYPE_NS)  has_ns = true;
+            else if (t === TYPE_DS)  has_ds = true;
+            else if (t === TYPE_SOA) has_soa = true;
+        }
+        return has_ns && !has_ds && !has_soa;
+    }
+
     get_wire_body(builder: WireBuilder): void {
         const next_wire = domain_name2wire(this.next_domain);
         builder.append_uint16(next_wire.length + this.type_bitmap.length);
@@ -594,6 +666,54 @@ export class DNSRR_NSEC3 extends ResourceRecordHandler {
 
     covers_type(type: number): boolean {
         return this.covered_types.indexOf(type) !== -1;
+    }
+
+    // has_opt_out reports whether the NSEC3 opt-out flag is set
+    // (RFC 5155 §6 — when set, the NSEC3 may safely omit insecure
+    // delegations from its [owner, next) range).
+    has_opt_out(): boolean {
+        return (this.flags & NSEC3_OPT_OUT_FLAG) !== 0;
+    }
+
+    // covers_hash reports whether target falls strictly between
+    // owner_hash and next_hashed_owner in NSEC3 sort order (RFC 5155
+    // §6.1: byte-wise numeric order on the hash output).
+    //
+    // Equal to either endpoint returns false. The wrap case where
+    // next_hashed_owner <= owner_hash is treated as the zone-trailing
+    // NSEC3 and handled symmetrically with [DNSRR_NSEC.covers_name].
+    covers_hash(owner_hash: Uint8Array, target: Uint8Array): boolean {
+        const cmp_owner = bytes_compare(target, owner_hash);
+        const cmp_next  = bytes_compare(target, this.next_hashed_owner);
+        if (cmp_owner === 0 || cmp_next === 0) return false;
+        if (bytes_compare(this.next_hashed_owner, owner_hash) <= 0) {
+            return cmp_owner > 0 || cmp_next < 0;
+        }
+        return cmp_owner > 0 && cmp_next < 0;
+    }
+
+    // proves_no_data mirrors [DNSRR_NSEC.proves_no_data]: the bitmap
+    // must NOT cover qtype and must NOT cover CNAME.
+    proves_no_data(qtype: number): boolean {
+        if (qtype === TYPE_CNAME) {
+            return !this.covers_type(TYPE_CNAME);
+        }
+        return !this.covers_type(qtype) && !this.covers_type(TYPE_CNAME);
+    }
+
+    // proves_no_ds mirrors [DNSRR_NSEC.proves_no_ds]: NS present, DS
+    // absent, SOA absent. The caller must separately confirm matching
+    // or covering denial for the child name.
+    proves_no_ds(): boolean {
+        let has_ns = false;
+        let has_ds = false;
+        let has_soa = false;
+        for (const t of this.covered_types) {
+            if (t === TYPE_NS)  has_ns = true;
+            else if (t === TYPE_DS)  has_ds = true;
+            else if (t === TYPE_SOA) has_soa = true;
+        }
+        return has_ns && !has_ds && !has_soa;
     }
 
     // Compute NSEC3 hash per RFC 5155 Section 5
@@ -669,6 +789,40 @@ export class DNSRR_NSEC3PARAM extends ResourceRecordHandler {
     clone(): DNSRR_NSEC3PARAM {
         return new DNSRR_NSEC3PARAM(this._rr, this.value);
     }
+}
+
+// NSEC3 opt-out flag (RFC 5155 §3.1.2.1, bit 0 of the Flags field).
+const NSEC3_OPT_OUT_FLAG = 0x01;
+
+// owner_hash_from_name decodes the leftmost label of an NSEC3 owner
+// name as base32hex (RFC 5155 §1.3). For owner "ABCD0123.example.com."
+// this returns the raw hash bytes encoded in "ABCD0123".
+export function owner_hash_from_name(owner: string): Uint8Array {
+    const cleaned = owner.endsWith('.') ? owner.slice(0, -1) : owner;
+    if (cleaned === '') {
+        throw new DNSZonePresentationFormatError('NSEC3 owner is empty');
+    }
+    const dot = cleaned.indexOf('.');
+    const label = dot >= 0 ? cleaned.slice(0, dot) : cleaned;
+    if (label === '') {
+        throw new DNSZonePresentationFormatError(`NSEC3 owner has no leftmost label: ${owner}`);
+    }
+    return base32hex_decode(label);
+}
+
+// bytes_compare returns the standard -1 / 0 / 1 byte-wise lexicographic
+// ordering of two Uint8Arrays. Used by NSEC3 hash range comparisons,
+// where RFC 5155 §6.1 requires byte-wise numeric order on the hash
+// output.
+function bytes_compare(a: Uint8Array, b: Uint8Array): number {
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) {
+        if (a[i] < b[i]) return -1;
+        if (a[i] > b[i]) return 1;
+    }
+    if (a.length < b.length) return -1;
+    if (a.length > b.length) return 1;
+    return 0;
 }
 
 // Base32hex decode (RFC 4648, used by NSEC3)

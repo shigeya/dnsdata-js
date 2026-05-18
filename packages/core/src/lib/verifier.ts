@@ -23,8 +23,18 @@
 import * as crypto from 'crypto';
 import { ResourceRecord } from './dns_zone';
 import { DNSSecZone, KeyVerifyMode } from './dnssec_zone';
-import { DNSKey, DNSRR_DS } from './dnssec_rr';
+import {
+    DNSKey,
+    DNSRR_DS,
+    DNSRR_NSEC,
+    DNSRR_NSEC3,
+    owner_hash_from_name,
+} from './dnssec_rr';
 import { StringToRRType, RRTypeToString } from './dns_type_table';
+import {
+    equal_canonical_names,
+    label_count,
+} from './dnssec_util';
 import {
     BUILTIN_ROOT_ANCHORS,
     RootAnchors,
@@ -33,17 +43,31 @@ import {
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS = StringToRRType('DS');
 const TYPE_RRSIG = StringToRRType('RRSIG');
+const TYPE_NSEC  = StringToRRType('NSEC');
+const TYPE_NSEC3 = StringToRRType('NSEC3');
 
 //////////////////////////////////////////////////////////// Verdict
 
-// The four-state classification from RFC 4033 §5. The cross-language
-// JSON schema agreed with dnsdata-go uses these exact lower-case
-// strings so callers can switch on the value without conversion.
+// The six-state classification refining RFC 4033 §5. The original four
+// strings ("secure", "insecure", "bogus", "indeterminate") keep their
+// exact spellings so older JSON consumers continue to switch on them
+// correctly; the two secure-negative additions use dash-separated names
+// so unknown-aware readers can route them to a generic handler and
+// upgrade later (DESIGN decision 12 in dnsdata-go UP-004).
 export enum Verdict {
-    Indeterminate = 'indeterminate',
-    Secure        = 'secure',
-    Insecure      = 'insecure',
-    Bogus         = 'bogus',
+    Indeterminate   = 'indeterminate',
+    Secure          = 'secure',
+    // SecureNoData: the chain reached a signed zone, the qname exists,
+    // and the zone produced a valid NSEC/NSEC3 proof that no rrset of
+    // the requested qtype is present (RFC 4035 §5.4 / RFC 5155 §8.5).
+    SecureNoData    = 'secure-nodata',
+    // SecureNXDomain: the chain reached a signed zone, the qname does
+    // not exist, and the zone produced a valid NSEC/NSEC3 proof of
+    // non-existence including wildcard non-existence (RFC 4035 §5.4 /
+    // RFC 5155 §8.4).
+    SecureNXDomain  = 'secure-nxdomain',
+    Insecure        = 'insecure',
+    Bogus           = 'bogus',
 }
 
 //////////////////////////////////////////////////////////// Resolver
@@ -157,10 +181,20 @@ export interface Evidence {
 export interface Result {
     verdict: Verdict;
     chain: ZoneStep[];
+    // insecureAt names the zone where the secure chain broke into an
+    // insecure delegation (NSEC/NSEC3 proof of no-DS at the parent).
+    // Empty for non-Insecure verdicts.
     insecureAt?: string;
+    // insecureReason is a short, human-readable label paired with
+    // insecureAt — typically naming which NSEC/NSEC3 produced the proof.
     insecureReason?: string;
     bogusAt?: string;
     bogusReason?: string;
+    // negativeReason is a short, human-readable label paired with the
+    // [Verdict.SecureNoData] and [Verdict.SecureNXDomain] verdicts,
+    // naming the NSEC/NSEC3 record(s) that produced the proof. Empty
+    // for other verdicts.
+    negativeReason?: string;
     evidence: Evidence;
 }
 
@@ -254,6 +288,21 @@ export class Verifier {
 
             const dsCount = await this.load_records(currentZone, childName, TYPE_DS, result, signal);
             if (dsCount === 0) {
+                // Before treating childName as a non-cut, see whether
+                // the resolver also handed us NSEC/NSEC3 records that
+                // prove no DS exists at childName (RFC 4035 §5.4 /
+                // RFC 5155 §8.9). A valid proof classifies the chain as
+                // Insecure at this delegation; absence of proof keeps
+                // the legacy "treat as no-cut and continue" behaviour
+                // so existing callers that ask for DS at a non-zone
+                // name still descend correctly.
+                const proof = this.prove_no_ds(currentZone, childName);
+                if (proof) {
+                    result.verdict = Verdict.Insecure;
+                    result.insecureAt = childName;
+                    result.insecureReason = proof;
+                    return result;
+                }
                 // childName is not a zone cut under currentZone — most
                 // often that's qname itself, but it can also be an
                 // empty non-terminal between two real cuts (e.g.
@@ -307,9 +356,25 @@ export class Verifier {
         check_aborted(signal);
         const leafCount = await this.load_records(currentZone, normalizedQName, qtype, result, signal);
         if (leafCount === 0) {
-            // v0.1.0 cannot tell NODATA / NXDOMAIN from "resolver
-            // returned nothing" — NSEC / NSEC3 negative proofs land
-            // with UP-004 (#8). Until then, surface as Indeterminate.
+            // No qtype rrset returned. Try NODATA first (matching NSEC
+            // / NSEC3 with qtype missing from the bitmap), then
+            // NXDOMAIN (covering NSEC / NSEC3 plus wildcard non-
+            // existence). A successful proof produces a positive
+            // classification rather than the legacy Indeterminate.
+            const noData = this.prove_no_data(currentZone, normalizedQName, qtype);
+            if (noData) {
+                result.verdict = Verdict.SecureNoData;
+                result.negativeReason = noData;
+                return result;
+            }
+            const nxDomain = this.prove_nx_domain(currentZone, normalizedQName);
+            if (nxDomain) {
+                result.verdict = Verdict.SecureNXDomain;
+                result.negativeReason = nxDomain;
+                return result;
+            }
+            // No proof — fall back to Indeterminate (the resolver may
+            // simply not have returned the negative records).
             return result;
         }
         const leafOK = currentZone.verify_rrset(normalizedQName, qtype);
@@ -387,6 +452,41 @@ export class Verifier {
             }
         }
         return null;
+    }
+
+    //////////////////////////////////////////////////////// negative proofs
+
+    // prove_no_ds attempts to prove from parent that childName has no
+    // DS record. Returns a short human-readable reason on success, or
+    // null when no usable proof is present.
+    //
+    // Signature verification failures simply skip that candidate proof;
+    // the verifier's job here is to *try* and quietly give up if it
+    // can't (RFC 4035 §5.4 / RFC 5155 §8.9).
+    private prove_no_ds(parent: DNSSecZone, childName: string): string | null {
+        const nsec = prove_no_ds_with_nsec(parent, childName);
+        if (nsec) return nsec;
+        return prove_no_ds_with_nsec3(parent, childName);
+    }
+
+    // prove_no_data attempts to prove from z that qname exists but no
+    // rrset of qtype is present (RFC 4035 §5.4 / RFC 5155 §8.5).
+    private prove_no_data(z: DNSSecZone, qname: string, qtype: number): string | null {
+        const nsec = prove_no_data_with_nsec(z, qname, qtype);
+        if (nsec) return nsec;
+        return prove_no_data_with_nsec3(z, qname, qtype);
+    }
+
+    // prove_nx_domain attempts to prove from z that qname does not
+    // exist as any rrset (RFC 4035 §5.4 NSEC; RFC 5155 §8.4 NSEC3
+    // three-record closest-encloser proof). Both proof shapes also
+    // require a wildcard non-existence component — otherwise a zone
+    // with a wildcard could lie about NXDOMAIN by suppressing the
+    // wildcard answer.
+    private prove_nx_domain(z: DNSSecZone, qname: string): string | null {
+        const nsec = prove_nx_domain_with_nsec(z, qname);
+        if (nsec) return nsec;
+        return prove_nx_domain_with_nsec3(z, qname);
     }
 }
 
@@ -538,4 +638,293 @@ function is_abort_error(err: unknown): boolean {
 function error_message(err: unknown): string {
     if (err instanceof Error) return err.message;
     return String(err);
+}
+
+//////////////////////////////////////////////////////////// negative proofs
+
+// nsec_candidates pairs each NSEC handler in z with its owner name so
+// canonical comparisons stay as plain string ops.
+interface NsecCandidate {
+    owner: string;
+    nsec:  DNSRR_NSEC;
+}
+
+function nsec_candidates(z: DNSSecZone): NsecCandidate[] {
+    const out: NsecCandidate[] = [];
+    for (const rr of z.all_records()) {
+        if (rr.type !== TYPE_NSEC) continue;
+        const h = rr.get_handler();
+        if (h instanceof DNSRR_NSEC) {
+            out.push({ owner: rr.label, nsec: h });
+        }
+    }
+    return out;
+}
+
+// nsec3_candidates pairs each NSEC3 handler in z with its owner name
+// and pre-decoded owner-hash bytes. Records whose owner cannot be
+// base32hex-decoded are silently skipped (they cannot participate in
+// proofs anyway).
+interface Nsec3Candidate {
+    owner:     string;
+    ownerHash: Uint8Array;
+    nsec3:     DNSRR_NSEC3;
+}
+
+function nsec3_candidates(z: DNSSecZone): Nsec3Candidate[] {
+    const out: Nsec3Candidate[] = [];
+    for (const rr of z.all_records()) {
+        if (rr.type !== TYPE_NSEC3) continue;
+        const h = rr.get_handler();
+        if (!(h instanceof DNSRR_NSEC3)) continue;
+        let hash: Uint8Array;
+        try { hash = owner_hash_from_name(rr.label); }
+        catch { continue; }
+        out.push({ owner: rr.label, ownerHash: hash, nsec3: h });
+    }
+    return out;
+}
+
+// prove_no_ds_with_nsec searches for a matching-owner NSEC at the
+// parent with the no-DS bitmap shape. The candidate must verify under
+// the parent's keys.
+function prove_no_ds_with_nsec(parent: DNSSecZone, childName: string): string | null {
+    for (const c of nsec_candidates(parent)) {
+        if (!c.nsec.matches_name(c.owner, childName)) continue;
+        if (!c.nsec.proves_no_ds()) continue;
+        if (!parent.verify_rrset(c.owner, TYPE_NSEC)) continue;
+        return `NSEC at ${c.owner} asserts NS without DS`;
+    }
+    return null;
+}
+
+// prove_no_ds_with_nsec3 searches the parent for either:
+//   - A matching NSEC3 whose owner-hash equals H(childName) and whose
+//     bitmap has the no-DS shape; or
+//   - A covering NSEC3 whose range covers H(childName) AND has the
+//     opt-out flag set (RFC 5155 §6).
+// Matching denial is tried first so the cheap case wins.
+function prove_no_ds_with_nsec3(parent: DNSSecZone, childName: string): string | null {
+    const cands = nsec3_candidates(parent);
+    if (cands.length === 0) return null;
+
+    // Matching denial: owner-hash == hash(childName).
+    for (const c of cands) {
+        let target: Uint8Array;
+        try {
+            target = DNSRR_NSEC3.compute_hash(childName, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+        } catch { continue; }
+        if (!bytes_equal(target, c.ownerHash)) continue;
+        if (!c.nsec3.proves_no_ds()) continue;
+        if (!parent.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+        return `NSEC3 at ${c.owner} (matching hash) asserts NS without DS`;
+    }
+
+    // Covering denial with opt-out.
+    for (const c of cands) {
+        if (!c.nsec3.has_opt_out()) continue;
+        let target: Uint8Array;
+        try {
+            target = DNSRR_NSEC3.compute_hash(childName, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+        } catch { continue; }
+        if (!c.nsec3.covers_hash(c.ownerHash, target)) continue;
+        if (!parent.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+        return `NSEC3 at ${c.owner} opt-out covers hash of ${childName}`;
+    }
+    return null;
+}
+
+function prove_no_data_with_nsec(z: DNSSecZone, qname: string, qtype: number): string | null {
+    for (const c of nsec_candidates(z)) {
+        if (!c.nsec.matches_name(c.owner, qname)) continue;
+        if (!c.nsec.proves_no_data(qtype)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
+        return `NSEC at ${c.owner} asserts qname exists without ${qtype_mnemonic(qtype)}`;
+    }
+    return null;
+}
+
+function prove_no_data_with_nsec3(z: DNSSecZone, qname: string, qtype: number): string | null {
+    for (const c of nsec3_candidates(z)) {
+        let target: Uint8Array;
+        try {
+            target = DNSRR_NSEC3.compute_hash(qname, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+        } catch { continue; }
+        if (!bytes_equal(target, c.ownerHash)) continue;
+        if (!c.nsec3.proves_no_data(qtype)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+        return `NSEC3 at ${c.owner} asserts qname exists without ${qtype_mnemonic(qtype)}`;
+    }
+    return null;
+}
+
+// prove_nx_domain_with_nsec needs a covering NSEC for qname AND a
+// covering (or matching) NSEC for *.<closestEncloser>. The closest
+// encloser is derived from the covering NSEC and qname: the longest
+// ancestor of qname that is also an ancestor of the NSEC's owner or
+// next_domain.
+function prove_nx_domain_with_nsec(z: DNSSecZone, qname: string): string | null {
+    const cands = nsec_candidates(z);
+
+    // 1. Find any NSEC that covers qname and verifies under z's keys.
+    let covering: NsecCandidate | null = null;
+    for (const c of cands) {
+        if (!c.nsec.covers_name(c.owner, qname)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
+        covering = c;
+        break;
+    }
+    if (!covering) return null;
+
+    // 2. Compute the closest-encloser candidate: longest common
+    //    ancestor of qname and one of the covering NSEC's range
+    //    endpoints. Both endpoints exist as zone names, so any common
+    //    ancestor with qname must also exist in the zone.
+    const ce = closest_encloser_nsec(qname, covering.owner, covering.nsec.next_domain);
+    if (ce === '') return null;
+    const wildcard = '*.' + ce;
+
+    // 3. Find an NSEC that either covers or matches *.<ce>. The match
+    //    case is acceptable because the wildcard's own bitmap would
+    //    still witness "no qname" via the covering NSEC found above.
+    for (const c of cands) {
+        if (!c.nsec.covers_name(c.owner, wildcard) && !c.nsec.matches_name(c.owner, wildcard)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
+        return `NSEC at ${covering.owner} covers ${qname}, NSEC at ${c.owner} denies wildcard ${wildcard}`;
+    }
+    return null;
+}
+
+// prove_nx_domain_with_nsec3 implements the three-NSEC3 closest-
+// encloser proof of RFC 5155 §8.4: closest-encloser match, next-closer
+// cover, and wildcard cover.
+function prove_nx_domain_with_nsec3(z: DNSSecZone, qname: string): string | null {
+    const cands = nsec3_candidates(z);
+    if (cands.length === 0) return null;
+
+    // Walk ancestors of qname from longest to shortest. The first
+    // ancestor whose hash matches some NSEC3's owner-hash is the
+    // closest encloser.
+    const ancestors = ancestors_of(qname);
+    let ce = '';
+    let ceOwner = '';
+    for (const a of ancestors) {
+        for (const c of cands) {
+            let target: Uint8Array;
+            try {
+                target = DNSRR_NSEC3.compute_hash(a, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+            } catch { continue; }
+            if (!bytes_equal(target, c.ownerHash)) continue;
+            if (!z.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+            ce = a;
+            ceOwner = c.owner;
+            break;
+        }
+        if (ce !== '') break;
+    }
+    if (ce === '' || equal_canonical_names(ce, qname)) {
+        // qname itself matches → NODATA shape, not NXDOMAIN. Or no
+        // ancestor matched at all.
+        return null;
+    }
+
+    // next-closer name: ce with one more label from qname prepended.
+    const nc = next_closer_name(qname, ce);
+    if (nc === '') return null;
+    const ncOwner = find_covering_nsec3(z, cands, nc);
+    if (ncOwner === '') return null;
+
+    // wildcard: "*." + ce, must be covered by some NSEC3.
+    const wildcard = '*.' + ce;
+    const wcOwner = find_covering_nsec3(z, cands, wildcard);
+    if (wcOwner === '') return null;
+
+    return `NSEC3 at ${ceOwner} matches closest encloser ${ce}; ${ncOwner} covers next-closer ${nc}; ${wcOwner} covers wildcard ${wildcard}`;
+}
+
+function find_covering_nsec3(z: DNSSecZone, cands: Nsec3Candidate[], target: string): string {
+    for (const c of cands) {
+        let h: Uint8Array;
+        try {
+            h = DNSRR_NSEC3.compute_hash(target, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+        } catch { continue; }
+        if (!c.nsec3.covers_hash(c.ownerHash, h)) continue;
+        if (!z.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+        return c.owner;
+    }
+    return '';
+}
+
+// closest_encloser_nsec returns the longest name that is a suffix of
+// qname AND a suffix of at least one of {owner, next}. Returns "" if
+// no common ancestor exists (qname disjoint from the NSEC's range
+// owners, which would itself indicate the response is inconsistent).
+function closest_encloser_nsec(qname: string, owner: string, next: string): string {
+    let best = '';
+    for (const cand of [owner, next]) {
+        const anc = longest_common_ancestor(qname, cand);
+        if (label_count(anc) > label_count(best)) best = anc;
+    }
+    return best;
+}
+
+// ancestors_of returns qname's ancestors in canonical descending order:
+// longest (qname itself) first, root last. Each entry carries the
+// trailing dot.
+function ancestors_of(qname: string): string[] {
+    const normalized = normalize_qname(qname);
+    if (normalized === '.') return ['.'];
+    const trimmed = normalized.slice(0, -1);
+    const labels = trimmed.split('.');
+    const out: string[] = [];
+    for (let i = 0; i < labels.length; i++) {
+        out.push(labels.slice(i).join('.') + '.');
+    }
+    out.push('.');
+    return out;
+}
+
+// next_closer_name returns the ancestor of qname that is one label
+// longer than ce. Returns "" if ce is not actually an ancestor of
+// qname or already equals qname.
+function next_closer_name(qname: string, ce: string): string {
+    const ancs = ancestors_of(qname);
+    for (let i = 0; i < ancs.length; i++) {
+        if (equal_canonical_names(ancs[i], ce)) {
+            if (i === 0) return '';
+            return ancs[i - 1];
+        }
+    }
+    return '';
+}
+
+// longest_common_ancestor returns the longest name that is a suffix of
+// both a and b in canonical form. The root "." is the lower bound and
+// is returned when no labels match.
+function longest_common_ancestor(a: string, b: string): string {
+    const la = canon_labels_trim(a);
+    const lb = canon_labels_trim(b);
+    let matched = 0;
+    for (let i = 0; i < la.length && i < lb.length; i++) {
+        const ai = la[la.length - 1 - i];
+        const bi = lb[lb.length - 1 - i];
+        if (ai !== bi) break;
+        matched++;
+    }
+    if (matched === 0) return '.';
+    return la.slice(la.length - matched).join('.') + '.';
+}
+
+function canon_labels_trim(name: string): string[] {
+    const cleaned = (name.endsWith('.') ? name.slice(0, -1) : name).toLowerCase();
+    if (cleaned === '') return [];
+    return cleaned.split('.');
+}
+
+function bytes_equal(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+    }
+    return true;
 }
