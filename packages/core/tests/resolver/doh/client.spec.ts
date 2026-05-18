@@ -11,14 +11,14 @@ import {
     DoHClient,
     DOH_MEDIA_TYPE,
     default_providers,
-} from '../../../../src/lib/resolver/doh/client';
+} from '../../../src/resolver/doh/client';
 import {
     DoHAllProvidersFailedError,
     DoHNoProvidersError,
     DoHUnexpectedContentTypeError,
     DoHUnexpectedStatusError,
     DoHTransportError,
-} from '../../../../src/lib/resolver/doh/errors';
+} from '../../../src/resolver/doh/errors';
 
 const TYPE_A = 1;
 

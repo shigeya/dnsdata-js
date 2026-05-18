@@ -18,8 +18,8 @@ import {
     DEFAULT_CLOUDFLARE,
     DEFAULT_QUAD9,
     default_providers,
-} from '../lib/resolver/doh';
-import { AuthClient } from '../lib/resolver_auth';
+} from '../resolver/doh';
+import { AuthClient } from '../resolver/auth/resolver_auth';
 import { Verifier, Resolver, Result } from '../verifier/verifier';
 import { ResourceRecord } from '../zone/dns_zone';
 import { format_output } from './output';

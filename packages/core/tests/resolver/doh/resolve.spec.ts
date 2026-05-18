@@ -6,14 +6,14 @@ import { AddressInfo } from 'net';
 import {
     DoHClient,
     DOH_MEDIA_TYPE,
-} from '../../../../src/lib/resolver/doh/client';
-import { DoHResponseError } from '../../../../src/lib/resolver/doh/errors';
+} from '../../../src/resolver/doh/client';
+import { DoHResponseError } from '../../../src/resolver/doh/errors';
 // Importing resolve.ts has the side-effect of installing
 // DoHClient.prototype.resolve. The barrel does it too — this spec
 // imports it directly so the test exercises the file under test.
-import '../../../../src/lib/resolver/doh/resolve';
-import { domain_name2wire } from '../../../../src/wire/dns_wire';
-import { WireBuilder } from '../../../../src/wire/dns_wire_util';
+import '../../../src/resolver/doh/resolve';
+import { domain_name2wire } from '../../../src/wire/dns_wire';
+import { WireBuilder } from '../../../src/wire/dns_wire_util';
 
 const TYPE_A = 1;
 const TYPE_NS = 2;

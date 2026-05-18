@@ -6,7 +6,7 @@
 // because it owns user-facing filesystem and stderr output.
 
 import * as https from 'https';
-import { DoHClient } from '../lib/resolver/doh';
+import { DoHClient } from '../resolver/doh';
 import { StringToRRType } from '../types/dns_type_table';
 import {
     RootAnchors,

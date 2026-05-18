@@ -14,4 +14,4 @@ export * from './dnssec/dnssec_key_loader';
 export * from './dnssec/dnssec_rr';
 export * from './dnssec/dnssec_zone';
 export * from './dnssec/root_anchors';
-export * from './lib/resolver/doh';
+export * from './resolver/doh';

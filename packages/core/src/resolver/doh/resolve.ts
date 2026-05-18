@@ -13,10 +13,10 @@
 // The package barrel (../doh/index.ts) re-exports both files so any
 // downstream import that names DoHClient also picks up the method.
 
-import { parse_message, RawRR } from '../../../wire/dns_message';
-import { rdata_to_string } from '../../../wire/rdata_decoder';
-import { ResourceRecord, ns_class, ns_type } from '../../../zone/dns_zone';
-import { RRClassToString, RRTypeToString } from '../../../types/dns_type_table';
+import { parse_message, RawRR } from '../../wire/dns_message';
+import { rdata_to_string } from '../../wire/rdata_decoder';
+import { ResourceRecord, ns_class, ns_type } from '../../zone/dns_zone';
+import { RRClassToString, RRTypeToString } from '../../types/dns_type_table';
 import { DoHClient } from './client';
 import { DoHResponseError } from './errors';
 
