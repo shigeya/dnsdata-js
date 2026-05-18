@@ -331,7 +331,14 @@ export class DNSKey extends ResourceRecordHandler {
 export class RRSig extends ResourceRecordHandler {
     readonly type_covered: number;
     readonly algorithm: number;
-    readonly labels: number;
+    // RFC 4034 §3.1.3 wildcard semantics rely on rewriting this field
+    // after construction: wildcard-synthesised answers carry a Labels
+    // count equal to the closest encloser's label count (i.e. the
+    // wildcard owner minus the leading "*."). The signing helper
+    // [DNSSecZone.sign_rr] exposes a labelsOverride parameter that
+    // performs the override; the field is otherwise written once by
+    // the parser / signing constructor.
+    labels: number;
     readonly original_ttl: number;
     readonly expire: number;     // Unix timestamp
     readonly inception: number;  // Unix timestamp
