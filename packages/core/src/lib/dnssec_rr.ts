@@ -12,6 +12,14 @@ import {
     compare_canonical_names,
     equal_canonical_names,
 } from './dnssec_util';
+import { AlgoRSAMD5, AlgoED25519 } from './types/algorithm';
+import {
+    algo_to_hash,
+    ecdsa_coord_len,
+    ecdsa_curve,
+    is_ecdsa_algorithm,
+    is_eddsa_algorithm,
+} from './dnssec/crypto';
 
 // Cached RR-type codes used by the negative-proof primitives. Resolved
 // at module load time so the hot path is a numeric comparison.
@@ -19,38 +27,6 @@ const TYPE_NS    = StringToRRType('NS');
 const TYPE_DS    = StringToRRType('DS');
 const TYPE_SOA   = StringToRRType('SOA');
 const TYPE_CNAME = StringToRRType('CNAME');
-
-// Check if algorithm is EdDSA-based
-function is_eddsa_algorithm(algorithm: number): boolean {
-    return algorithm === 15 || algorithm === 16;
-}
-
-// Map DNSSEC algorithm code to Node.js hash algorithm name
-// Not applicable for EdDSA (15, 16) which uses built-in hashing
-function algo_to_hash(algorithm: number): string {
-    switch (algorithm) {
-    case 5: case 7:  return 'sha1';
-    case 8:          return 'sha256';
-    case 10:         return 'sha512';
-    case 13:         return 'sha256';   // ECDSAP256SHA256
-    case 14:         return 'sha384';   // ECDSAP384SHA384
-    default: throw new Error(`Unsupported DNSSEC algorithm: ${algorithm}`);
-    }
-}
-
-// Check if algorithm is ECDSA-based
-function is_ecdsa_algorithm(algorithm: number): boolean {
-    return algorithm === 13 || algorithm === 14;
-}
-
-// Get EC curve name for ECDSA algorithm
-function ecdsa_curve(algorithm: number): string {
-    switch (algorithm) {
-    case 13: return 'P-256';
-    case 14: return 'P-384';
-    default: throw new Error(`Not an ECDSA algorithm: ${algorithm}`);
-    }
-}
 
 // Map DS digest type to Node.js hash algorithm name
 function ds_digest_type_to_hash(digest_type: number): string {
@@ -70,7 +46,7 @@ function base64url_encode(buf: Uint8Array): string {
 
 // Convert ECDSA DER signature to DNSSEC raw (r||s) format
 function ecdsa_der_to_raw(der: Uint8Array, algorithm: number): Uint8Array {
-    const coord_len = algorithm === 13 ? 32 : 48;
+    const coord_len = ecdsa_coord_len(algorithm);
     // DER: 0x30 <len> 0x02 <rlen> <r> 0x02 <slen> <s>
     let offset = 2; // skip 0x30 <len>
     offset++; // skip 0x02
@@ -95,7 +71,7 @@ function ecdsa_der_to_raw(der: Uint8Array, algorithm: number): Uint8Array {
 
 // Convert DNSSEC raw (r||s) signature to DER format for Node.js crypto
 function ecdsa_raw_to_der(raw: Uint8Array, algorithm: number): Buffer {
-    const coord_len = algorithm === 13 ? 32 : 48;
+    const coord_len = ecdsa_coord_len(algorithm);
     let r = raw.slice(0, coord_len);
     let s = raw.slice(coord_len);
 
@@ -133,7 +109,7 @@ function ecdsa_raw_to_der(raw: Uint8Array, algorithm: number): Buffer {
 // RFC 6605: key_data is the uncompressed point (x || y) without the 0x04 prefix
 function load_ecdsa_public_key(key_data: Uint8Array, algorithm: number): crypto.KeyObject {
     const curve = ecdsa_curve(algorithm);
-    const coord_len = algorithm === 13 ? 32 : 48; // P-256: 32 bytes, P-384: 48 bytes
+    const coord_len = ecdsa_coord_len(algorithm);
     if (key_data.length !== coord_len * 2) {
         throw new Error(`Invalid ECDSA key length: expected ${coord_len * 2}, got ${key_data.length}`);
     }
@@ -151,7 +127,7 @@ function load_ecdsa_public_key(key_data: Uint8Array, algorithm: number): crypto.
 // Load Ed25519/Ed448 public key from DNSSEC format (raw key bytes)
 // RFC 8080: key_data is the raw public key (32 bytes for Ed25519, 57 bytes for Ed448)
 function load_eddsa_public_key(key_data: Uint8Array, algorithm: number): crypto.KeyObject {
-    const crv = algorithm === 15 ? 'Ed25519' : 'Ed448';
+    const crv = algorithm === AlgoED25519 ? 'Ed25519' : 'Ed448';
     const jwk = {
         kty: 'OKP',
         crv: crv,
@@ -215,7 +191,7 @@ export class DNSKey extends ResourceRecordHandler {
         // RFC4034 Appendix B
         // Algorithm 1 (RSAMD5) uses a special key tag calculation:
         // the low 16 bits of the key modulus (last 2 bytes of key_data)
-        if (this.algorithm === 1) {
+        if (this.algorithm === AlgoRSAMD5) {
             if (this.key_data.length < 2) return 0;
             return ((this.key_data[this.key_data.length - 2] << 8) |
                      this.key_data[this.key_data.length - 1]) & 0xffff;

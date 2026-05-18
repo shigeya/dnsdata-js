@@ -6,6 +6,7 @@
 
 export * from './lib/dns_exception';
 export * from './lib/dns_type_table';
+export * from './lib/types/algorithm';
 export * from './lib/dns_wire';
 export * from './lib/dns_wire_util';
 export * from './lib/dns_zone';
