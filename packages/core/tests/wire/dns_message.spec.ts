@@ -5,7 +5,7 @@
 // follow-through for the answer-section owner name).
 
 import { parse_message, Header } from '../../src/wire/dns_message';
-import { DNSMessageMalformedError } from '../../src/lib/dns_exception';
+import { DNSMessageMalformedError } from '../../src/dns_exception';
 
 // Helper: assemble a Uint8Array from a list of byte arrays / numbers.
 function bytes(...parts: (number | number[] | Uint8Array)[]): Uint8Array {

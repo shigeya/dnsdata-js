@@ -5,7 +5,7 @@ import {
     DNSWireError,
     DNSWirePointerLoopError,
     DNSWirePointerForwardError,
-} from '../lib/dns_exception';
+} from '../dns_exception';
 
 // RFC 1035 §2.3.4 size limits.
 const MAX_LABEL_LENGTH = 63;

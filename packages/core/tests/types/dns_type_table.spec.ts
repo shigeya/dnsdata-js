@@ -17,7 +17,7 @@ import {
     UnknownRCodeError,
     UnknownRRTypeError,
     UnknownRRClassError,
-} from "../../src/lib/dns_exception";
+} from "../../src/dns_exception";
 
 //
 

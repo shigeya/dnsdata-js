@@ -19,7 +19,7 @@ import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../d
 // RFC 7477 §2: Type Bit Map uses same encoding as NSEC (RFC 4034 §4.1.2).
 // Reuse DNSRR_NSEC.encode_type_bitmap() for bitmap encoding.
 import { DNSRR_NSEC } from '../../dnssec/dnssec_rr';
-import { DNSZonePresentationFormatError } from '../../lib/dns_exception';
+import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 export class DNSRR_CSYNC extends ResourceRecordHandler {
     readonly soa_serial: number;

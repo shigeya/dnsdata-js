@@ -12,7 +12,7 @@ import {
     DNSWireError,
     DNSWirePointerLoopError,
     DNSWirePointerForwardError,
-} from "../../src/lib/dns_exception";
+} from "../../src/dns_exception";
 
 describe("Domain name wire format conversion library", () => {
     const test_vector: Array<[string, Uint8Array]> = [

@@ -12,7 +12,7 @@
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
-import { DNSZonePresentationFormatError } from '../../lib/dns_exception';
+import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 // RFC 7043 §3/§4: EUI48 and EUI64 share the same structure (fixed-length address).
 // This class handles both; only the expected byte length differs.

@@ -4,7 +4,7 @@
 // (DNSKEY, RRSIG, DS, NSEC/NSEC3, TLSA/SMIMEA, SSHFP, SVCB/HTTPS, EUI48/64,
 // HINFO, RP, OPENPGPKEY, CERT, LOC, CSYNC, NAPTR, URI, OPT) via dnssec_zone.
 
-export * from './lib/dns_exception';
+export * from './dns_exception';
 export * from './types/dns_type_table';
 export * from './types/algorithm';
 export * from './wire/dns_wire';

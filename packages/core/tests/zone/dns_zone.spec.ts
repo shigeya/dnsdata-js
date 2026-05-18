@@ -2,7 +2,7 @@
 
 import { ResourceRecord, Zone, has_encoder } from "../../src/zone/dns_zone";
 import { WireBuilder } from "../../src/wire/dns_wire_util";
-import { DNSZoneRDataFormatError } from "../../src/lib/dns_exception";
+import { DNSZoneRDataFormatError } from "../../src/dns_exception";
 
 describe("ResourceRecord", () => {
     it("can create from string class and type", () => {

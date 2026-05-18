@@ -10,7 +10,7 @@
 import { rdata_to_string, rfc3597 } from '../../src/wire/rdata_decoder';
 import { parse_message } from '../../src/wire/dns_message';
 import { StringToRRType } from '../../src/types/dns_type_table';
-import { DNSRDataDecodeError } from '../../src/lib/dns_exception';
+import { DNSRDataDecodeError } from '../../src/dns_exception';
 
 const TYPE_A     = StringToRRType('A');
 const TYPE_AAAA  = StringToRRType('AAAA');

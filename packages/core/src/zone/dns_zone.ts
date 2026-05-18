@@ -5,7 +5,7 @@
 import { WireBuilder } from '../wire/dns_wire_util';
 import { domain_name2wire } from '../wire/dns_wire';
 import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from '../types/dns_type_table';
-import { DNSZoneRDataFormatError } from '../lib/dns_exception';
+import { DNSZoneRDataFormatError } from '../dns_exception';
 
 // Type aliases
 export type ns_type = number;

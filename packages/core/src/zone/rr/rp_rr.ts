@@ -14,7 +14,7 @@ import { WireBuilder } from '../../wire/dns_wire_util';
 import { domain_name2wire } from '../../wire/dns_wire';
 import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
-import { DNSZonePresentationFormatError } from '../../lib/dns_exception';
+import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 export class DNSRR_RP extends ResourceRecordHandler {
     readonly mbox: string;

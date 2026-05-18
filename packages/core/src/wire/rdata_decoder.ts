@@ -21,7 +21,7 @@
 
 import { parse_domain_name } from './dns_wire';
 import { RRTypeToString, StringToRRType } from '../types/dns_type_table';
-import { DNSRDataDecodeError } from '../lib/dns_exception';
+import { DNSRDataDecodeError } from '../dns_exception';
 
 const TYPE_A          = StringToRRType('A');
 const TYPE_AAAA       = StringToRRType('AAAA');
