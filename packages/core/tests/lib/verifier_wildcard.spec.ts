@@ -12,11 +12,11 @@
 
 import * as crypto from 'crypto';
 
-import { DNSSecZone } from '../../src/lib/dnssec_zone';
-import { DNSKey, RRSig } from '../../src/lib/dnssec_rr';
+import { DNSSecZone } from '../../src/dnssec/dnssec_zone';
+import { DNSKey, RRSig } from '../../src/dnssec/dnssec_rr';
 import { ResourceRecord } from '../../src/zone/dns_zone';
 import { StringToRRType, RRTypeToString } from '../../src/types/dns_type_table';
-import { RootAnchors } from '../../src/lib/root_anchors';
+import { RootAnchors } from '../../src/dnssec/root_anchors';
 import {
     Verifier,
     Verdict,

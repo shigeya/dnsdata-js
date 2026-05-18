@@ -10,14 +10,14 @@ import {
     AlgoRSASHA1NSEC3SHA1,
     AlgoRSASHA256,
     AlgoRSASHA512,
-} from '../../../src/types/algorithm';
+} from '../../src/types/algorithm';
 import {
     algo_to_hash,
     ecdsa_coord_len,
     ecdsa_curve,
     is_ecdsa_algorithm,
     is_eddsa_algorithm,
-} from '../../../src/lib/dnssec/crypto';
+} from '../../src/dnssec/crypto';
 
 describe('is_ecdsa_algorithm', () => {
     test('true for ECDSA P-256 / P-384', () => {

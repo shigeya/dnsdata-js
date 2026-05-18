@@ -1,5 +1,5 @@
 import { ResourceRecord } from '../../src/zone/dns_zone';
-import { DNSRR_DS, DNSKey } from '../../src/lib/dnssec_rr';
+import { DNSRR_DS, DNSKey } from '../../src/dnssec/dnssec_rr';
 import { StringToRRType, RRTypeToString } from '../../src/types/dns_type_table';
 import { WireBuilder } from '../../src/wire/dns_wire_util';
 
@@ -98,7 +98,7 @@ describe('CDNSKEY (RFC 7344 §3.2)', () => {
 
 describe('Zone file parsing with CDS/CDNSKEY records', () => {
     it('should parse CDS records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.
@@ -112,7 +112,7 @@ $TTL 3600
     });
 
     it('should parse CDNSKEY records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

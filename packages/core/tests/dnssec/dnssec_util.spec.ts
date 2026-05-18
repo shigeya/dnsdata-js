@@ -5,7 +5,7 @@ import {
     equal_canonical_names,
     label_count,
     last_n_labels,
-} from '../../src/lib/dnssec_util';
+} from '../../src/dnssec/dnssec_util';
 
 describe('compare_canonical_names', () => {
     // RFC 4034 §6.1 ordering examples.

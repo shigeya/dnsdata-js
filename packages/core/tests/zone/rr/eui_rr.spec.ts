@@ -106,7 +106,7 @@ describe('EUI64 (RFC 7043 §4)', () => {
 
 describe('Zone file parsing with EUI48/EUI64 records', () => {
     it('should parse EUI48 records from zone file text', () => {
-        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.
@@ -120,7 +120,7 @@ host  IN  EUI48  00-00-5e-00-53-2a
     });
 
     it('should parse EUI64 records from zone file text', () => {
-        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

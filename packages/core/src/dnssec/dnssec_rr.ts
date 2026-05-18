@@ -7,7 +7,7 @@ import { WireBuilder } from '../wire/dns_wire_util';
 import { domain_name2wire } from '../wire/dns_wire';
 import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../zone/dns_zone';
-import { DNSZonePresentationFormatError } from './dns_exception';
+import { DNSZonePresentationFormatError } from '../lib/dns_exception';
 import {
     compare_canonical_names,
     equal_canonical_names,
@@ -19,7 +19,7 @@ import {
     ecdsa_curve,
     is_ecdsa_algorithm,
     is_eddsa_algorithm,
-} from './dnssec/crypto';
+} from './crypto';
 
 // Cached RR-type codes used by the negative-proof primitives. Resolved
 // at module load time so the hot path is a numeric comparison.

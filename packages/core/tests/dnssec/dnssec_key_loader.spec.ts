@@ -1,8 +1,8 @@
 // DNSSEC Private Key Loader tests
 
 import * as crypto from 'crypto';
-import { load_private_key_from_string, get_algorithm_from_string } from "../../src/lib/dnssec_key_loader";
-import { DNSKey } from "../../src/lib/dnssec_rr";
+import { load_private_key_from_string, get_algorithm_from_string } from "../../src/dnssec/dnssec_key_loader";
+import { DNSKey } from "../../src/dnssec/dnssec_rr";
 import { ResourceRecord } from "../../src/zone/dns_zone";
 
 // RSA/SHA1 key from C++ test data (Ktest1.local.+005+61037.private)

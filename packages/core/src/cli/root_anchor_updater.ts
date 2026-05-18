@@ -15,7 +15,7 @@ import {
     loadRootAnchors,
     saveRootAnchors,
     getRootAnchorsPath,
-} from '../lib/root_anchors';
+} from '../dnssec/root_anchors';
 
 function https_get(url: string): Promise<string> {
     return new Promise((resolve, reject) => {

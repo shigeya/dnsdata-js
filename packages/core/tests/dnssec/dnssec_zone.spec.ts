@@ -1,8 +1,8 @@
 // DNSSecZone tests
 
 import * as crypto from 'crypto';
-import { DNSSecZone, KeyVerifyMode } from "../../src/lib/dnssec_zone";
-import { DNSKey, DNSRR_DS } from "../../src/lib/dnssec_rr";
+import { DNSSecZone, KeyVerifyMode } from "../../src/dnssec/dnssec_zone";
+import { DNSKey, DNSRR_DS } from "../../src/dnssec/dnssec_rr";
 
 // Generate a test RSA key pair and create a signed zone for testing
 function create_test_zone(): {

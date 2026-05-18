@@ -65,7 +65,7 @@ describe('DNSRR_HINFO (RFC 1035 §3.3.2)', () => {
 
 describe('Zone file parsing with HINFO records', () => {
     it('should parse HINFO records from zone file text', () => {
-        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

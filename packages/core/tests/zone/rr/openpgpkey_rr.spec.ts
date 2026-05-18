@@ -66,7 +66,7 @@ describe('DNSRR_OPENPGPKEY (RFC 7929)', () => {
 
 describe('Zone file parsing with OPENPGPKEY records', () => {
     it('should parse OPENPGPKEY records from zone file text', () => {
-        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         const testB64 = Buffer.from([0xde, 0xad, 0xbe, 0xef]).toString('base64');
         zone.read_string(`

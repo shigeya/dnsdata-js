@@ -1,6 +1,6 @@
 // DNSSEC Resource Record tests
 
-import { DNSKey, RRSig, DNSRR_DS, DNSRR_NSEC, DNSRR_NSEC3 } from "../../src/lib/dnssec_rr";
+import { DNSKey, RRSig, DNSRR_DS, DNSRR_NSEC, DNSRR_NSEC3 } from "../../src/dnssec/dnssec_rr";
 import { ResourceRecord } from "../../src/zone/dns_zone";
 import { WireBuilder } from "../../src/wire/dns_wire_util";
 

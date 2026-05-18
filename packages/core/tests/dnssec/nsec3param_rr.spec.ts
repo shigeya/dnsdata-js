@@ -1,5 +1,5 @@
 import { ResourceRecord } from '../../src/zone/dns_zone';
-import { DNSRR_NSEC3PARAM } from '../../src/lib/dnssec_rr';
+import { DNSRR_NSEC3PARAM } from '../../src/dnssec/dnssec_rr';
 import { StringToRRType, RRTypeToString } from '../../src/types/dns_type_table';
 import { WireBuilder } from '../../src/wire/dns_wire_util';
 
@@ -86,7 +86,7 @@ describe('DNSRR_NSEC3PARAM', () => {
 
 describe('Zone file parsing with NSEC3PARAM records', () => {
     it('should parse NSEC3PARAM records from zone file text', () => {
-        const { DNSSecZone } = require('../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

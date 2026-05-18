@@ -22,24 +22,24 @@
 
 import * as crypto from 'crypto';
 import { ResourceRecord } from '../zone/dns_zone';
-import { DNSSecZone, KeyVerifyMode } from './dnssec_zone';
+import { DNSSecZone, KeyVerifyMode } from '../dnssec/dnssec_zone';
 import {
     DNSKey,
     DNSRR_DS,
     DNSRR_NSEC,
     DNSRR_NSEC3,
     owner_hash_from_name,
-} from './dnssec_rr';
+} from '../dnssec/dnssec_rr';
 import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import {
     equal_canonical_names,
     label_count,
     last_n_labels,
-} from './dnssec_util';
+} from '../dnssec/dnssec_util';
 import {
     BUILTIN_ROOT_ANCHORS,
     RootAnchors,
-} from './root_anchors';
+} from '../dnssec/root_anchors';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS     = StringToRRType('DS');

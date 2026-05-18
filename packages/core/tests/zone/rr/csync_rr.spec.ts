@@ -90,7 +90,7 @@ describe('DNSRR_CSYNC (RFC 7477)', () => {
 
 describe('Zone file parsing with CSYNC records', () => {
     it('should parse CSYNC records from zone file text', () => {
-        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.

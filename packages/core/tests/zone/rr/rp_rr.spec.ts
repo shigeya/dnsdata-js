@@ -80,7 +80,7 @@ describe('DNSRR_RP (RFC 1183 §2.2)', () => {
 
 describe('Zone file parsing with RP records', () => {
     it('should parse RP records from zone file text', () => {
-        const { DNSSecZone } = require('../../../src/lib/dnssec_zone');
+        const { DNSSecZone } = require('../../../src/dnssec/dnssec_zone');
         const zone = new DNSSecZone();
         zone.read_string(`
 $ORIGIN example.com.
