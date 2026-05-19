@@ -273,6 +273,13 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
 // z, capturing presentation values into result.evidence. Returns
 // the number of records matching qtype (so the caller can detect
 // a missing rrset).
+//
+// When a Cache is attached (via VerifierOptions.cache) the lookup
+// goes through the cache first; a hit reuses the previously fetched
+// records and skips the resolver entirely. Both hits and fresh
+// fetches feed the same `apply_records` path so `result.evidence`
+// is populated identically in either case. Resolver errors are
+// NEVER cached.
 async function load_records(
     v: Verifier,
     z: DNSSecZone,
@@ -282,6 +289,13 @@ async function load_records(
     signal?: AbortSignal,
 ): Promise<number> {
     check_aborted(signal);
+    if (v.cache) {
+        const cached = v.cache.get(name, qtype);
+        if (cached !== undefined) {
+            return apply_records(cached, z, qtype, result);
+        }
+    }
+
     let records: ResourceRecord[];
     try {
         records = await v.resolver.query(name, qtype, signal);
@@ -298,6 +312,15 @@ async function load_records(
         );
     }
 
+    if (v.cache) v.cache.put(name, qtype, records);
+    return apply_records(records, z, qtype, result);
+}
+
+// Appends each record to z, updates result.evidence for the
+// DNSSEC-bookkeeping types, and returns the count of records
+// matching qtype. Shared by the resolver-miss and cache-hit paths
+// so the two produce indistinguishable bookkeeping.
+function apply_records(records: ResourceRecord[], z: DNSSecZone, qtype: number, result: Result): number {
     let matching = 0;
     for (const rr of records) {
         z.add_rr(rr);
