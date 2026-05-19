@@ -102,7 +102,7 @@ class CountingResolver implements Resolver {
 
     constructor(private readonly zones: DNSSecZone[]) {}
 
-    async query(name: string, qtype: number): Promise<ResourceRecord[]> {
+    async query(name: string, qtype: number): Promise<{ records: ResourceRecord[]; ad: boolean; rcode: number }> {
         this.queries.push({ name, qtype });
         const out: ResourceRecord[] = [];
         for (const z of this.zones) {
@@ -114,7 +114,7 @@ class CountingResolver implements Resolver {
                 }
             }
         }
-        return out;
+        return { records: out, ad: false, rcode: 0 };
     }
 }
 

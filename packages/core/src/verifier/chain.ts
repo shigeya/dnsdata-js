@@ -296,9 +296,9 @@ async function load_records(
         }
     }
 
-    let records: ResourceRecord[];
+    let resp;
     try {
-        records = await v.resolver.query(name, qtype, signal);
+        resp = await v.resolver.query(name, qtype, signal);
     } catch (err: unknown) {
         if (is_abort_error(err) || signal?.aborted) {
             throw new VerifierChainTimeoutError(
@@ -311,7 +311,18 @@ async function load_records(
             err,
         );
     }
+    // Non-zero RCODE is surfaced as data by the resolver layer but
+    // is a hard error for chain validation (RFC 4035 §5): we cannot
+    // prove anything from a SERVFAIL or REFUSED. NXDOMAIN (3) and
+    // NODATA (records empty, RCODE 0) are handled downstream as "no
+    // records present" and need their own NSEC/NSEC3 proofs.
+    if (resp.rcode !== 0 && resp.rcode !== 3) {
+        throw new VerifierResolverError(
+            `verifier: resolver returned RCODE=${resp.rcode} for ${name}/${qtype_mnemonic(qtype)}`,
+        );
+    }
 
+    const records = resp.records;
     if (v.cache) v.cache.put(name, qtype, records);
     return apply_records(records, z, qtype, result);
 }

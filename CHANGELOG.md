@@ -14,6 +14,26 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+
+- New `ResolverResponse` shape returned by both `DoHClient.resolve`
+  and `AuthClient.resolve`: `{ records, ad, rcode }`. The AD bit and
+  RCODE from the parsed wire header are surfaced verbatim so consumers
+  no longer need to re-parse the wire message to recover them.
+- Non-zero RCODE is no longer thrown as `DoHResponseError` /
+  `AuthResponseError`. The resolver layer returns the parsed response
+  as data; only transport- and parse-level failures come back as
+  errors. Callers that need "any non-zero RCODE is fatal" should
+  inspect `resp.rcode` themselves.
+- `Resolver.query` (verifier transport) signature updated in lockstep
+  to `Promise<ResolverResponse>`. The RCODE classification policy
+  moves into `verifier/chain.ts:load_records`: RCODE 0 and 3
+  (NXDOMAIN) are treated as "no records present" so the existing
+  NODATA / NXDOMAIN proof paths handle them; any other non-zero RCODE
+  raises `VerifierResolverError`.
+
+Ports dnsdata-go UP-009.
+
 ## [0.4.0] — 2026-05-19
 
 First tagged release of dnsdata-js. The history below back-fills

@@ -115,7 +115,7 @@ class ZoneCollectionResolver implements Resolver {
 
     constructor(private readonly zones: DNSSecZone[]) {}
 
-    async query(name: string, qtype: number): Promise<ResourceRecord[]> {
+    async query(name: string, qtype: number): Promise<{ records: ResourceRecord[]; ad: boolean; rcode: number }> {
         this.queries.push({ name, qtype });
         const out: ResourceRecord[] = [];
         for (const z of this.zones) {
@@ -127,7 +127,7 @@ class ZoneCollectionResolver implements Resolver {
                 }
             }
         }
-        return out;
+        return { records: out, ad: false, rcode: 0 };
     }
 }
 
@@ -190,7 +190,7 @@ describe('Verifier construction', () => {
 
 describe('Verifier.validate input handling', () => {
     it('rejects empty qname', async () => {
-        const resolver: Resolver = { async query() { return []; } };
+        const resolver: Resolver = { async query() { return { records: [], ad: false, rcode: 0 }; } };
         const v = new Verifier({ resolver });
         await expect(v.validate('', TYPE_A)).rejects.toBeInstanceOf(VerifierInvalidQNameError);
     });
@@ -205,7 +205,7 @@ describe('Verifier.validate input handling', () => {
     });
 
     it('honours AbortSignal before querying', async () => {
-        const resolver: Resolver = { async query() { return []; } };
+        const resolver: Resolver = { async query() { return { records: [], ad: false, rcode: 0 }; } };
         const v = new Verifier({ resolver });
         const ctrl = new AbortController();
         ctrl.abort();
@@ -480,9 +480,9 @@ class MapResolver implements Resolver {
         for (const [k, rs] of entries) this.map.set(k, rs);
     }
 
-    async query(name: string, qtype: number): Promise<ResourceRecord[]> {
+    async query(name: string, qtype: number): Promise<{ records: ResourceRecord[]; ad: boolean; rcode: number }> {
         this.queries.push({ name, qtype });
-        return this.map.get(key(name, qtype)) ?? [];
+        return { records: this.map.get(key(name, qtype)) ?? [], ad: false, rcode: 0 };
     }
 }
 

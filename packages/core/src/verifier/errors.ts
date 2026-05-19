@@ -27,7 +27,7 @@ export class VerifierInvalidQNameError extends VerifierError {
 
 export class VerifierResolverError extends VerifierError {
     public readonly cause: unknown;
-    constructor(message: string, cause: unknown) {
+    constructor(message: string, cause?: unknown) {
         super(message);
         this.name = 'VerifierResolverError';
         this.cause = cause;
