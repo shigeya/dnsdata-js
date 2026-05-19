@@ -28,6 +28,7 @@ import { RRTypeToString } from '../types/dns_type_table';
 import { BUILTIN_ROOT_ANCHORS, RootAnchors } from '../dnssec/root_anchors';
 import { Resolver } from './resolver';
 import { Result } from './result';
+import { Cache } from './cache';
 import { VerifierConfigError, VerifierChainTimeoutError } from './errors';
 // chain.ts depends on this file for the Verifier class type and the
 // shared helpers below; this import is value-only because we call
@@ -49,6 +50,13 @@ export interface VerifierOptions {
     // API parity with dnsdata-go and reserved for the expiry-check
     // pass that lands with UP-006 (wildcard) / SHOULD #13.
     now?: () => Date;
+
+    // Optional. Pluggable cache consulted before every Resolver.query
+    // call. Sharing one Cache across validate() invocations lets a
+    // batch run reuse root and TLD DNSKEY / DS rrsets and is the
+    // intended way to satisfy DESIGN.md §4 SHOULD #13. A nullish
+    // value is treated as no cache attached.
+    cache?: Cache;
 }
 
 export class Verifier {
@@ -57,6 +65,7 @@ export class Verifier {
     // Reserved; consulted once verify_rrsig grows a validity-window
     // check (currently unused — kept for API parity with the Go side).
     readonly now: () => Date;
+    readonly cache?: Cache;
 
     constructor(opts: VerifierOptions) {
         if (!opts || !opts.resolver) {
@@ -65,6 +74,7 @@ export class Verifier {
         this.resolver = opts.resolver;
         this.anchors = opts.trustAnchors ?? BUILTIN_ROOT_ANCHORS;
         this.now = opts.now ?? (() => new Date());
+        if (opts.cache != null) this.cache = opts.cache;
         // Force handler registration. dnssec_rr.ts performs this at
         // import time; the explicit reference here documents the
         // dependency and matches the Go side's `NewVerifier` →

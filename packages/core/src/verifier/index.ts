@@ -5,6 +5,7 @@
 export * from './verdict';
 export * from './result';
 export * from './resolver';
+export * from './cache';
 export * from './errors';
 export {
     Verifier,
