@@ -14,6 +14,14 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-20
+
+Coordinated release with dnsdata-go v0.6.0 and mailsec-probe v0.6.0.
+Skips v0.5.0: the sibling dnsdata-go used the v0.5.0-rc.1 tag during
+UP-009 development and we jump directly to v0.6.0 to keep version
+numbers aligned across the two libraries (the alignment is documented
+in the CHANGELOG preamble).
+
 ### Changed (BREAKING)
 
 - New `ResolverResponse` shape returned by both `DoHClient.resolve`
