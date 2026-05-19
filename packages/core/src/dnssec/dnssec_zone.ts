@@ -8,18 +8,9 @@ import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
 import { Zone, ResourceRecord } from '../zone/dns_zone';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import { label_count, last_n_labels } from './dnssec_util';
-import '../zone/rr/dane_rr'; // Register TLSA/SMIMEA handlers
-import '../zone/rr/sshfp_rr'; // Register SSHFP handler
-import '../zone/rr/svcb_rr'; // Register SVCB/HTTPS handlers (RFC 9460)
-import '../zone/rr/eui_rr'; // Register EUI48/EUI64 handlers (RFC 7043)
-import '../zone/rr/hinfo_rr'; // Register HINFO handler (RFC 1035 §3.3.2)
-import '../zone/rr/rp_rr'; // Register RP handler (RFC 1183 §2.2)
-import '../zone/rr/openpgpkey_rr'; // Register OPENPGPKEY handler (RFC 7929)
-import '../zone/rr/cert_rr'; // Register CERT handler (RFC 4398)
-import '../zone/rr/loc_rr'; // Register LOC handler (RFC 1876)
-import '../zone/rr/csync_rr'; // Register CSYNC handler (RFC 7477)
-import '../zone/rr/naptr_rr'; // Register NAPTR handler (RFC 3403)
-import '../zone/rr/uri_rr'; // Register URI handler (RFC 7553)
+// As of P8, RR handler registration is opt-in via registerAllHandlers()
+// (or the per-pkg register_dnssec_handlers / register_legacy_handlers
+// functions). Importing this file no longer triggers any registration.
 
 export enum KeyVerifyMode {
     None = 0,

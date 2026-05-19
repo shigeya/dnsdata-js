@@ -13,7 +13,7 @@
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { domain_name2wire } from '../../wire/dns_wire';
 import { StringToRRType } from '../../types/dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 // RFC 9460 §14.3.2: Initial SvcParamKey registry
@@ -234,8 +234,6 @@ export class DNSRR_SVCB extends ResourceRecordHandler {
 }
 
 // Register SVCB (type 64) handler
-register_rr_handler(StringToRRType('SVCB'), (rr, value) => new DNSRR_SVCB(rr, value));
 
 // RFC 9460 §9.1: HTTPS (type 65) uses identical wire format to SVCB (type 64).
 // The handler class is shared; only the RR type code differs.
-register_rr_handler(StringToRRType('HTTPS'), (rr, value) => new DNSRR_SVCB(rr, value));

@@ -14,7 +14,7 @@
 
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 export class DNSRR_URI extends ResourceRecordHandler {
@@ -63,4 +63,3 @@ function parseURI(value: string): { priority: number; weight: number; target: st
     };
 }
 
-register_rr_handler(StringToRRType('URI'), (rr, value) => new DNSRR_URI(rr, value));

@@ -15,7 +15,7 @@
 
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 // RFC 7477 §2: Type Bit Map uses same encoding as NSEC (RFC 4034 §4.1.2).
 // Reuse DNSRR_NSEC.encode_type_bitmap() for bitmap encoding.
 import { DNSRR_NSEC } from '../../dnssec/dnssec_rr';
@@ -62,4 +62,3 @@ export class DNSRR_CSYNC extends ResourceRecordHandler {
     }
 }
 
-register_rr_handler(StringToRRType('CSYNC'), (rr, value) => new DNSRR_CSYNC(rr, value));

@@ -18,7 +18,7 @@
 
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 const EQUATOR = 2147483648;  // 2^31
@@ -151,4 +151,3 @@ export class DNSRR_LOC extends ResourceRecordHandler {
     }
 }
 
-register_rr_handler(StringToRRType('LOC'), (rr, value) => new DNSRR_LOC(rr, value));

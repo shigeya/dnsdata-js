@@ -12,6 +12,7 @@
 // downstream consumers use.
 
 import { StringToRRType } from '../types/dns_type_table';
+import { registerAllHandlers } from '../index';
 import {
     DoHClient,
     DEFAULT_GOOGLE,
@@ -24,6 +25,12 @@ import { Verifier, Resolver, Result } from '../verifier';
 import { ResourceRecord } from '../zone/dns_zone';
 import { format_output } from './output';
 import { fetch_and_update_root_anchors } from './root_anchor_updater';
+
+// P8 made RR handler registration opt-in. The CLI is a top-level
+// entry point so it owns the install — every later code path
+// (resolver.resolve() → ResourceRecord.get_handler(), Verifier chain
+// walks, root-anchor DNSKEY parsing) depends on the registry.
+registerAllHandlers();
 
 type Method = 'doh' | 'auth';
 

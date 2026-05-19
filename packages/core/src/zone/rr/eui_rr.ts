@@ -11,7 +11,7 @@
 
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { StringToRRType } from '../../types/dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 // RFC 7043 §3/§4: EUI48 and EUI64 share the same structure (fixed-length address).
@@ -46,8 +46,6 @@ export class DNSRR_EUI extends ResourceRecordHandler {
 }
 
 // Register EUI48 (type 108) handler
-register_rr_handler(StringToRRType('EUI48'), (rr, value) => new DNSRR_EUI(rr, value, 6));
 
 // Register EUI64 (type 109) handler
 // RFC 7043 §4: EUI64 uses the same structure as EUI48 but with 8-octet address.
-register_rr_handler(StringToRRType('EUI64'), (rr, value) => new DNSRR_EUI(rr, value, 8));

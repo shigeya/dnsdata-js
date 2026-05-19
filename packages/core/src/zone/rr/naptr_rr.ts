@@ -15,7 +15,7 @@
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { domain_name2wire } from '../../wire/dns_wire';
 import { StringToRRType } from '../../types/dns_type_table';
-import { ResourceRecord, ResourceRecordHandler, register_rr_handler } from '../dns_zone';
+import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 
 export class DNSRR_NAPTR extends ResourceRecordHandler {
@@ -153,4 +153,3 @@ function parseQuotedString(s: string, pos: number): { value: string; nextPos: nu
     return { value, nextPos: pos };
 }
 
-register_rr_handler(StringToRRType('NAPTR'), (rr, value) => new DNSRR_NAPTR(rr, value));
