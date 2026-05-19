@@ -311,7 +311,9 @@ describe("AuthClient (UP-003)", () => {
         );
         try {
             const c = new AuthClient({ servers: [server.addr], timeout_ms: 500 });
-            const records = await c.resolve("example.com.", TYPE_DNSKEY);
+            const resp = await c.resolve("example.com.", TYPE_DNSKEY);
+            expect(resp.rcode).toBe(0);
+            const records = resp.records;
             expect(records.length).toBe(1);
             expect(records[0].value).toBe("257 3 13 3q2+7w==");
         } finally {
@@ -331,7 +333,8 @@ describe("AuthClient (UP-003)", () => {
         );
         try {
             const c = new AuthClient({ servers: [server.addr], timeout_ms: 500 });
-            const records = await c.resolve("www.example.com.", TYPE_A);
+            const resp = await c.resolve("www.example.com.", TYPE_A);
+            const records = resp.records;
             expect(records.length).toBe(2);
             expect(records[0].label).toBe("www.example.com.");
             expect(records[1].label).toBe("example.com.");
@@ -340,7 +343,7 @@ describe("AuthClient (UP-003)", () => {
         }
     });
 
-    it("resolve() throws AuthResponseError on non-zero RCODE", async () => {
+    it("resolve() surfaces non-zero RCODE as data, not as an error", async () => {
         const server = await start_udp_listener((q) => {
             // Build NXDOMAIN response: flags = 0x8183 (QR|RD|RA|RCODE=3).
             const query_id = (q[0] << 8) | q[1];
@@ -360,7 +363,9 @@ describe("AuthClient (UP-003)", () => {
         });
         try {
             const c = new AuthClient({ servers: [server.addr], timeout_ms: 500 });
-            await expect(c.resolve("missing.example.", TYPE_A)).rejects.toBeInstanceOf(AuthResponseError);
+            const resp = await c.resolve("missing.example.", TYPE_A);
+            expect(resp.rcode).toBe(3);
+            expect(resp.records).toHaveLength(0);
         } finally {
             server.close();
         }

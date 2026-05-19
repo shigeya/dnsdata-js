@@ -162,7 +162,9 @@ describe('DoHClient.resolve', () => {
         const srv = track(await start_server(response));
 
         const c = new DoHClient({ providers: [srv.url], timeout_ms: 2000 });
-        const records = await c.resolve('example.com.', TYPE_DNSKEY);
+        const resp = await c.resolve('example.com.', TYPE_DNSKEY);
+        expect(resp.rcode).toBe(0);
+        const records = resp.records;
         expect(records).toHaveLength(1);
         const rr = records[0];
         expect(rr.label).toBe('example.com.');
@@ -182,7 +184,8 @@ describe('DoHClient.resolve', () => {
         const srv = track(await start_server(response));
 
         const c = new DoHClient({ providers: [srv.url], timeout_ms: 2000 });
-        const records = await c.resolve('www.example.com.', TYPE_A);
+        const resp = await c.resolve('www.example.com.', TYPE_A);
+        const records = resp.records;
         expect(records).toHaveLength(2);
         expect(records[0].type).toBe(TYPE_A);
         expect(records[0].label).toBe('www.example.com.');
@@ -190,18 +193,13 @@ describe('DoHClient.resolve', () => {
         expect(records[1].label).toBe('example.com.');
     });
 
-    test('propagates non-zero RCODE as DoHResponseError', async () => {
+    test('surfaces non-zero RCODE as data, not as an error', async () => {
         const response = build_response_rcode('missing.example.', TYPE_A, 3); // NXDOMAIN
         const srv = track(await start_server(response));
         const c = new DoHClient({ providers: [srv.url], timeout_ms: 2000 });
-        let err: unknown;
-        try {
-            await c.resolve('missing.example.', TYPE_A);
-        } catch (e) {
-            err = e;
-        }
-        expect(err).toBeInstanceOf(DoHResponseError);
-        expect((err as Error).message).toContain('RCODE=3');
+        const resp = await c.resolve('missing.example.', TYPE_A);
+        expect(resp.rcode).toBe(3);
+        expect(resp.records).toHaveLength(0);
     });
 
     test('rejects a malformed response with DoHResponseError', async () => {

@@ -83,10 +83,10 @@ export async function fetch_and_update_root_anchors(providers?: readonly string[
         ? new DoHClient({ providers })
         : new DoHClient();
     const dnskey_type = StringToRRType('DNSKEY');
-    const records = await doh.resolve('.', dnskey_type);
+    const resp = await doh.resolve('.', dnskey_type);
 
     const dnskeys: RootAnchorDNSKEY[] = [];
-    for (const rr of records) {
+    for (const rr of resp.records) {
         if (rr.type !== dnskey_type) continue;
         // ResourceRecord.value is the rdata presentation form
         // "{flags} {protocol} {algorithm} {base64key}" — the wire

@@ -215,7 +215,8 @@ async function main(): Promise<void> {
 
     let records: ResourceRecord[];
     try {
-        records = await resolver.query(opts.fqdn, rrtype);
+        const resp = await resolver.query(opts.fqdn, rrtype);
+        records = resp.records;
     } catch (err) {
         console.error(`Error resolving ${opts.fqdn} ${opts.rrtype}: ${err_message(err)}`);
         process.exit(1);

@@ -120,8 +120,8 @@ class MapResolver implements Resolver {
         for (const [k, rs] of entries) this.map.set(k, rs);
     }
 
-    async query(name: string, qtype: number): Promise<ResourceRecord[]> {
-        return this.map.get(key(name, qtype)) ?? [];
+    async query(name: string, qtype: number): Promise<{ records: ResourceRecord[]; ad: boolean; rcode: number }> {
+        return { records: this.map.get(key(name, qtype)) ?? [], ad: false, rcode: 0 };
     }
 }
 
