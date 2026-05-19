@@ -1,6 +1,6 @@
 {
   "name": "@dnsdata/core",
-  "version": "0.0.1",
+  "version": "0.4.0",
   "description": "DNS/DNSSEC core data model, wire format, zone parser, and chain verifier",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
