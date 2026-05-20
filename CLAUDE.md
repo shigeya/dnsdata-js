@@ -1,68 +1,108 @@
-# CLAUDE.md
+# CLAUDE.md — dnsdata-js
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Operating notes for working in this repository with Claude Code.
 
-## Project Overview
+## Lineage
 
-dnsdata-js is a DNS/DNSSEC protocol implementation library in TypeScript, ported from a C++ reference library (wide-cpp-lib). It is structured as a Lerna monorepo with a single package: `@dnsdata/core` (located in `packages/core/`). A sibling Go implementation lives in `dnsdata-go`; the `~/.dnsdata/` user-data location is intentionally shared between the two.
-
-## Build & Test Commands
-
-All commands below run from `packages/core/`:
-
-```bash
-# Install dependencies (run from repo root)
-npm install && cd packages/core && npm install
-
-# Run all tests
-cd packages/core && npx jest
-
-# Run a single test file
-cd packages/core && npx jest tests/lib/dns_wire.spec.ts
-
-# Compile TypeScript (no build script defined; use tsc directly)
-cd packages/core && npx tsc
-
-# Lint
-cd packages/core && npx eslint src/ tests/
+```
+wide-cpp-lib (C++) → dnsdata-js (TypeScript)   ← here
+                          ⇅
+                     dnsdata-go (Go)
 ```
 
-The only defined npm script in the package is `test` → `jest`.
+- Sibling implementation:
+  [`shigeya/dnsdata-go`](https://github.com/shigeya/dnsdata-go) —
+  maintained as an equal sibling, not as a downstream port. See
+  [`docs/SIBLING.md`](docs/SIBLING.md) for originator tags, drift
+  policy, and cross-repo module mapping.
+- Primary consumer:
+  [`shigeya/mailsec-probe`](https://github.com/shigeya/mailsec-probe)
+  (consumes the Go sibling directly; the TS contract stays in lockstep
+  via [`DESIGN.md §4`](DESIGN.md)).
 
-## Architecture
+## Design rules
 
-### Package: `@dnsdata/core` (`packages/core/`)
+- **Pure port / pure TypeScript.** No `dns-packet`, no `node-forge`,
+  no `tweetnacl`. Crypto comes from Node's built-in `crypto`; wire
+  format and zone parsing are hand-rolled in this repo.
+- The public API must satisfy the MUST / SHOULD / MAY / MUST NOT
+  clauses in mailsec-probe `DESIGN.md §16`. Those clauses are mirrored
+  in [`DESIGN.md §4`](DESIGN.md) as the source of truth for the TS
+  contract (idiom-translated from the Go side).
+- Public API shape:
+  - `Verifier.validate(qname, qtype, signal?) → Promise<Result>` —
+    chain validation
+  - `DoHClient` / `AuthClient` — DoH and direct-to-authoritative DNS
+  - `dnssec/*` — DNSKEY / RRSIG / DS / NSEC / NSEC3 primitives
+  - `wire/*`, `types/*` — lower-level primitives
+- Handler registration is **opt-in** at the public entry point. Callers
+  invoke `registerAllHandlers()` once at startup; importing
+  `@dnsdata/core` does not install anything (mirrors the Go side's
+  explicit `RegisterHandlers()` call).
+- Never call `process.exit`. Never write to `stdout` / `stderr` from
+  library code. Never hold module-global state visible across `Verifier`
+  instances — multiple `Verifier`s must be usable concurrently and
+  independently.
+- All wire format / binary data uses `Uint8Array`. `Buffer` only appears
+  at Node `crypto` API boundaries.
 
-Source lives in `src/lib/`, tests in `tests/lib/` (pattern: `*.spec.ts`).
+## Porting workflow (recommended)
 
-#### Core DNS modules
+When porting a new Go module / file to TypeScript (the dominant
+direction since v0.4.0):
 
-- **`dns_wire.ts`** — Domain name wire format encoding/decoding. Uses `Uint8Array` for binary data.
-- **`dns_wire_util.ts`** — `WireBuilder` class for constructing binary buffers (big-endian uint8/16/32, byte append). Also provides `compare_uint8arrays` for canonical ordering.
-- **`dns_type_table.ts`** — Bidirectional conversion between DNS numeric codes and string names (OpCodes, RCodes, RR Types, RR Classes). Includes `QTypeValidForRequest` and `QClassValidForRequest`. Throws `RangeError` on unknown input.
-- **`dns_exception.ts`** — Exception hierarchy using `ts-custom-error`: `DNSZoneException`, `DNSZonePresentationFormatError`, `DNSZoneRDataFormatError`.
+1. Read the Go source (`dnsdata-go/<pkg>/<x>.go`) and its test
+   (`<x>_test.go`).
+2. Locate the matching TS file via `docs/SIBLING.md` § Cross-repo
+   module mapping. The layout is intentionally 1-to-1.
+3. Port the function while applying the idiom mapping:
+   - `error` returns → rejected `Promise` with a typed `Error`
+     subclass.
+   - Sentinel `var Err…` → `class extends Error` (matching category).
+   - `[]byte` → `Uint8Array`.
+   - `context.Context` → `AbortSignal`; re-check via
+     `check_aborted(signal)` at every chain hop.
+   - `CamelCase` → `snake_case` for functions / module-level
+     identifiers; `PascalCase` for types and classes.
+4. Port the table-driven `t.Run` test to Jest `describe` / `it`
+   blocks with identical inputs / expected outputs.
+5. Confirm parity with `cd packages/core && npx jest <pattern>`.
+6. Run `cd packages/core && npx tsc --noEmit && npx eslint src/ tests/`.
 
-#### Zone management
+Where the Go source returns a typed error for an unknown enum value,
+the TS equivalent throws a typed `Error` subclass (e.g.
+`UnknownOpCodeError`), never a bare `RangeError`.
 
-- **`dns_zone.ts`** — `ResourceRecord` class (stores label, TTL, class, type, value text), `ResourceRecordHandler` abstract base, and `Zone` class (record store with zone file parser). Supports per-type wire format builders for A, AAAA, NS, PTR, SOA, MX, TXT, SRV, CAA. Uses a handler registry pattern (`register_rr_handler`) for extensible RR type handling. Zone parser supports `$ORIGIN` and `$TTL` directives.
-- **`dnssec_zone.ts`** — `DNSSecZone` extends `Zone` with DNSSEC operations: `find_rrsigs`, `find_dnskey`, `create_digest_target` (RFC4034 Section 6.2), `verify_rrsig`, `verify_rrset`, `verify_ksk/zsk`, `verify_delegation_signer`, and `sign_rr`.
+If you spot a Go-side bug, robustness gap, or API-shape issue during
+porting, and you change behaviour on the TS side as a result, file an
+issue on this repo with the *Originated in dnsdata-go vX.Y.Z* tag and
+cross-reference the Go-side `UP-NNN` from
+[`dnsdata-go/UPSTREAM_FEEDBACK.md`](https://github.com/shigeya/dnsdata-go/blob/main/UPSTREAM_FEEDBACK.md).
 
-#### DNSSEC record handlers
+For new functionality that originates in TS and should be port-backed
+to Go, file a `UF-NNN` placeholder issue on the Go repo. A dedicated
+TS-side `UPSTREAM_FEEDBACK.md` catalogue is not maintained in this repo;
+GitHub Issues with the originator tag fill that role.
 
-- **`dnssec_rr.ts`** — `DNSKey` (DNSKEY parsing, key tag computation per RFC4034 Appendix B, RSA/ECDSA/Ed25519 public key loading, sign/verify via Node.js crypto), `RRSig` (RRSIG parsing, RDATA digest target construction), `DNSRR_DS` (DS parsing, digest verification with SHA-1/SHA-256/SHA-384), `DNSRR_NSEC` (NSEC parsing, type bitmap encode/decode), `DNSRR_NSEC3` (NSEC3 parsing, hash computation). These register themselves into the handler registry on module load.
-- **`dnssec_key_loader.ts`** — Loads private keys from ISC/BIND keygen file format: RSA (JWK), ECDSA P-256/P-384 (PKCS#8 DER), Ed25519/Ed448 (PKCS#8 DER).
+## Work in progress
 
-### Key Design Patterns
+See the "Roadmap" section of [`DESIGN.md`](DESIGN.md). Progress is
+synchronised with `mailsec-probe` Phase 3.0 and tracks the
+`dnsdata-go` sibling's version numbers — current line is v0.6.0.
 
-- **Binary data**: All wire format uses `Uint8Array` (not JS strings)
-- **Crypto**: Node.js `crypto` module (no external crypto libs). Algorithm mapping: DNSSEC algo 5/7→sha1, 8→sha256, 10→sha512, 13→ECDSA P-256/sha256, 14→ECDSA P-384/sha384, 15→Ed25519, 16→Ed448
-- **Handler registry**: `dns_zone.ts` provides `register_rr_handler()`, `dnssec_rr.ts` registers DNSKEY/RRSIG/DS/NSEC/NSEC3 handlers at module load time. This avoids circular imports.
-- **Zone file parser**: Handles comments (`;`), continuation lines `()`, implicit labels (leading whitespace), `$ORIGIN`, `$TTL`, and both explicit/implicit class formats.
-- **RRSIG verification**: Uses any-valid semantics per RFC 4035 Section 5.3.3 (at least one valid RRSIG suffices).
+## Testing
 
-### Conventions
+- Base layer: `cd packages/core && npx jest`.
+- DNSSEC primitives use Known-Answer Tests under
+  `packages/core/tests/`.
+- Target ≥ 80% line coverage (matches the Go side's bar).
+- Tests are organised by package mirroring the source layout
+  (`tests/{types,wire,zone,dnssec,resolver,verifier}/`); the CLI in
+  `src/cli/` currently has no dedicated test directory.
 
-- TypeScript strict mode, target ES2017, CommonJS modules
-- `Uint8Array` for all binary/wire format data, `Buffer` only at crypto API boundaries
-- Jest with ts-jest preset; test files in `tests/lib/` use `describe`/`it` blocks
-- Type aliases `ns_type`, `ns_class` follow BIND naming convention
+## Commits
+
+- Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`,
+  `test:`, …).
+- Auto-signatures such as `Co-Authored-By` are disabled globally in
+  `~/.claude/settings.json`.
