@@ -86,10 +86,15 @@ verification (all supported algorithms), and every supported RR type.
 
 ## Documentation
 
+- [`DESIGN.md`](DESIGN.md) — API contract (mirrors mailsec-probe
+  `DESIGN.md §16` and the Go sibling's `DESIGN.md §4`), package
+  responsibilities, roadmap.
 - [`docs/USAGE.md`](docs/USAGE.md) — library API, CLI, supported RR
   types, development commands.
 - [`docs/SIBLING.md`](docs/SIBLING.md) — sibling-implementation model,
   cross-repo module mapping, drift policy, TS-specific surface.
+- [`CHANGELOG.md`](CHANGELOG.md) — versioned change history (aligned
+  with the Go sibling's version numbers).
 - [`CLAUDE.md`](CLAUDE.md) — module-by-module internals and design
   patterns.
 
