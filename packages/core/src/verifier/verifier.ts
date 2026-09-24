@@ -11,6 +11,7 @@
 //   - leaf_negative.ts  NODATA / NXDOMAIN proofs + name helpers
 //   - wildcard.ts       RFC 4035 §5.3.4 wildcard non-existence proof
 //   - verdict.ts        Verdict enum + worst-of combinator
+//   - answer.ts         the validated RRset carried on Result.answer
 //   - result.ts         Result + HopOutcome + summary structs
 //   - resolver.ts       Resolver dependency interface
 //   - errors.ts         VerifierError hierarchy
@@ -23,7 +24,6 @@
 // these helpers in the shell avoids spreading the abort wiring
 // across the per-hop files.
 
-import { DNSKey, DNSRR_DS } from '../dnssec/dnssec_rr';
 import { RRTypeToString } from '../types/dns_type_table';
 import { BUILTIN_ROOT_ANCHORS, RootAnchors } from '../dnssec/root_anchors';
 import { Resolver } from './resolver';
@@ -74,11 +74,12 @@ export class Verifier {
         this.anchors = opts.trustAnchors ?? BUILTIN_ROOT_ANCHORS;
         this.now = opts.now ?? (() => new Date());
         if (opts.cache != null) this.cache = opts.cache;
-        // Force handler registration. dnssec_rr.ts performs this at
-        // import time; the explicit reference here documents the
-        // dependency and matches the Go side's `NewVerifier` →
-        // `RegisterHandlers()` call (the registry is idempotent).
-        void DNSKey; void DNSRR_DS;
+        // The constructor does not register RR handlers, and no module
+        // registers them at import time: the caller runs
+        // registerAllHandlers() (or register_dnssec_handlers()) once
+        // before validate(), or the DNSKEY / DS / RRSIG / NSEC records
+        // do not decode and nothing verifies. The Go side's
+        // `NewVerifier` calls `RegisterHandlers()` itself.
     }
 
     // Walks the DNSSEC chain of trust from the root zone down to

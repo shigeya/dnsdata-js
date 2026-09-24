@@ -8,7 +8,7 @@ import { with_fault } from '../../../src/resolver/memory';
 import { Verdict } from '../../../src/verifier/verdict';
 import { VerifierResolverError } from '../../../src/verifier/errors';
 import { ResourceRecord, Zone } from '../../../src/zone/dns_zone';
-import { buildHierarchy, inception, newAuthority, newVerifier, now, readZone, sign } from './helpers';
+import { buildHierarchy, expiration, inception, newAuthority, newVerifier, now, readZone, sign } from './helpers';
 
 const T = (name: string): number => StringToRRType(name);
 const RCODE_SERVFAIL = 2;
@@ -39,6 +39,41 @@ describe('memory authority: private-root hierarchy verdicts', () => {
         expect(alias.aliases?.map((a) => [a.type, a.from, a.target, a.verdict])).toEqual([
             ['cname', 'alias.example.test.', 'www.example.test.', Verdict.Secure],
         ]);
+    });
+});
+
+// C-7: Result.answer is the RRset that was validated — after a CNAME
+// the target's RRset, for a wildcard the synthesised RRset at the query
+// name, and for a type without a mnemonic its exact octets.
+describe('memory authority: the validated answer', () => {
+    const h = buildHierarchy();
+    const v = newVerifier(h, newAuthority(h, h.leaf), now);
+    const rfc3339 = (d: Date): string => d.toISOString().replace('.000Z', 'Z');
+
+    it.each([
+        ['alias.example.test.', 'www.example.test.', T('A'), '192.0.2.10', 3],
+        ['x.wild.example.test.', 'x.wild.example.test.', T('A'), '192.0.2.20', 3],
+        ['key.example.test.', 'key.example.test.', 65400,
+            '\\# 35 030101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f', 3],
+    ] as const)('%s', async (qname, wantName, qtype, wantValue, wantLabels) => {
+        const res = await v.validate(qname, qtype);
+        const a = res.answer;
+        expect(res.verdict).toBe(Verdict.Secure);
+        expect(a?.records).toHaveLength(1);
+        expect(a?.signatures.length).toBeGreaterThan(0);
+        expect([a?.name, a?.records[0].value]).toEqual([wantName, wantValue]);
+        expect(a?.signatures[0]).toMatchObject({
+            labels: wantLabels,
+            inception: rfc3339(inception),
+            expiration: rfc3339(expiration),
+        });
+    });
+
+    it('carries the exact TYPE65400 RDATA', async () => {
+        const res = await v.validate('key.example.test.', 65400);
+        const rdata = Buffer.from(res.answer?.records[0].rdata ?? '', 'base64');
+        expect(rdata).toHaveLength(35);
+        expect(rdata[0]).toBe(3);
     });
 });
 

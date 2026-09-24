@@ -28,6 +28,7 @@ import { try_cname, try_dname } from './alias';
 import { prove_no_ds } from './negative';
 import { prove_no_data, prove_nx_domain } from './leaf_negative';
 import { detect_wildcard, prove_qname_non_existence } from './wildcard';
+import { build_answer } from './answer';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS     = StringToRRType('DS');
@@ -99,6 +100,11 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
         if (outcome.insecureReason) result.insecureReason = outcome.insecureReason;
         if (outcome.negativeReason) result.negativeReason = outcome.negativeReason;
         if (outcome.wildcard)      result.wildcard = outcome.wildcard;
+        // Only a Secure result carries the answer: a Secure terminal
+        // hop behind an Insecure alias hop combines to Insecure.
+        if (result.verdict === Verdict.Secure && outcome.answer) {
+            result.answer = outcome.answer;
+        }
         return result;
     }
 
@@ -231,6 +237,7 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
                 bogusReason: `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`,
             };
         }
+        const answer = build_answer(currentZone, qname, qtype);
         // Verified. RFC 4035 §5.3.2: if the covering RRSIG's Labels
         // field indicates wildcard synthesis, §5.3.4 also requires
         // a proof that the next-closer name does not exist —
@@ -249,9 +256,10 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
             return {
                 verdict: Verdict.Secure,
                 wildcard: { ...wc, proofReason: proof },
+                answer,
             };
         }
-        return { verdict: Verdict.Secure };
+        return { verdict: Verdict.Secure, answer };
     }
 
     // qtype rrset is absent. Look for a CNAME (at qname) or DNAME

@@ -97,8 +97,26 @@ interface Result {
     aliases?: AliasStep[];                  // CNAME / DNAME hops (UP-005)
     wildcard?: WildcardInfo;                // wildcard synthesis (UP-006)
     evidence: Evidence;                     // presentation-form raw data
+    answer?: Answer;                        // validated RRset, Secure only (UP-015)
+}
+
+interface Answer {
+    name: string;
+    type: number;
+    records: { name: string; ttl: number; class: number; type: number;
+               value: string; rdata: string /* base64 */ }[];
+    signatures: { keyTag: number; algorithm: number; signer: string; labels: number;
+                  inception: string; expiration: string /* RFC 3339 UTC */ }[];
 }
 ```
+
+`answer` is present only when `verdict` is `Verdict.Secure`: after
+CNAME / DNAME hops it is the terminal RRset, for a wildcard answer the
+synthesised RRset at the query name, and `signatures` lists each RRSIG
+over it that verified at the verifier's clock. Per MUST 10 the RDATA
+octets are base64 and the window is RFC 3339 strings
+(`"2026-01-01T00:00:00Z"`), the same JSON dnsdata-go emits for its
+`[]byte` and `time.Time` fields.
 
 The detailed contract is in §4 (Requirements).
 

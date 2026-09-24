@@ -70,6 +70,9 @@ describe('shared signed vectors (testdata/signed)', () => {
         // The bogus reason rides along so a failure explains itself.
         expect(`${res.verdict} (${res.bogusReason ?? ''})`).toBe(
             `${c.verdict} (${c.verdict === Verdict.Bogus ? res.bogusReason ?? '' : ''})`);
+        // The validated answer rides along exactly when the verdict is Secure.
+        expect(res.answer !== undefined).toBe(c.verdict === Verdict.Secure);
+        if (res.answer) expect(res.answer.signatures.length).toBeGreaterThan(0);
     });
 });
 

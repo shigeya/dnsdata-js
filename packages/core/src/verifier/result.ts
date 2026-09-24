@@ -67,6 +67,47 @@ export interface Result {
     // rrset" from "wildcard-synthesised rrset" check this field.
     wildcard?: WildcardInfo;
     evidence: Evidence;
+    // answer is the RRset that was validated, set only when verdict is
+    // [Verdict.Secure] (absent otherwise, so it never carries
+    // unvalidated data). After CNAME / DNAME hops it is the terminal
+    // RRset; for a wildcard answer it is the synthesised RRset at the
+    // query name. Consumers should use this rather than querying the
+    // name again, so that what they act on is exactly what was
+    // validated.
+    answer?: Answer;
+}
+
+// Answer is a validated RRset with the signatures that verified it.
+export interface Answer {
+    name:       string;
+    type:       number;
+    records:    AnswerRecord[];
+    signatures: AnswerSignature[];
+}
+
+// AnswerRecord is one record of a validated RRset. value is the
+// presentation form as received (RFC 3597 `\# …` for types the library
+// does not decode); rdata is the base64 of the RDATA octets the
+// signature covered (Go's []byte in JSON; Result stays plain JSON).
+export interface AnswerRecord {
+    name:  string;
+    ttl:   number;
+    class: number;
+    type:  number;
+    value: string;
+    rdata: string;
+}
+
+// AnswerSignature describes an RRSIG over the answer that verified at
+// the verifier's clock: who signed it and its validity window, as
+// RFC 3339 UTC strings ("2026-01-01T00:00:00Z", Go's time.Time in JSON).
+export interface AnswerSignature {
+    keyTag:     number;
+    algorithm:  number;
+    signer:     string;
+    labels:     number;
+    inception:  string;
+    expiration: string;
 }
 
 // WildcardInfo describes a wildcard-synthesised positive answer.
@@ -118,4 +159,6 @@ export interface HopOutcome {
     negativeReason?: string;
     alias?:          AliasStep;
     wildcard?:       WildcardInfo;
+    // answer is the verified RRset of a terminal positive hop.
+    answer?:         Answer;
 }

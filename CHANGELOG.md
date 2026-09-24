@@ -77,6 +77,18 @@ version?" question answerable at a glance.
   `example.test.` with their BIND test keys, root anchors and expected
   verdicts, shared byte for byte with dnsdata-go and validated to the
   same nine verdicts.
+- `Result.answer` (port of dnsdata-go UP-015): the RRset that was
+  validated — each record's owner, TTL, class, type, presentation
+  `value` and `rdata` (base64 of the RDATA octets the signature
+  covered; RFC 3597 form and exact octets for types without a
+  mnemonic) — with the RRSIGs over it that verified at the verifier's
+  clock (`keyTag`, `algorithm`, `signer`, `labels`, and `inception` /
+  `expiration` as RFC 3339 UTC strings). Set only when the verdict is
+  `Secure`: after CNAME / DNAME hops it is the terminal RRset, for a
+  wildcard answer the synthesised RRset at the query name. Consumers no
+  longer need to query the name again. `Result` stays plain JSON and
+  matches the Go JSON form; other results are unchanged. New types
+  `Answer`, `AnswerRecord`, `AnswerSignature`.
 
 ### Fixed
 
