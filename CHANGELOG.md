@@ -47,6 +47,20 @@ version?" question answerable at a glance.
 - `DNSSecZone.sign_rr`, `find_rrsigs`, RRSIG presentation, NSEC / NSEC3
   bitmaps, `ResourceRecord.to_string` and the DoH / authoritative
   resolvers no longer throw on types or classes without a mnemonic.
+- RRSIG digest target orders RRset members by RDATA alone and removes
+  duplicate RRs (RFC 4034 §6.3, dnsdata-go UF-005). Previously the
+  RDLENGTH prefix took part in the sort, so RRsets whose members differ
+  in length (NS sets with names of different lengths, TXT, DNSKEY sets
+  mixing key sizes) failed to verify against signatures made by other
+  signers, and a duplicated record made its RRset unverifiable. A member
+  that encodes to nothing now throws `DNSZoneRDataFormatError` instead
+  of contributing an empty entry.
+- The verifier enforces the RRSIG validity window against its clock
+  (RFC 4035 §5.3.1, dnsdata-go UF-006). **Behaviour change:** an expired
+  or not-yet-valid signature now yields `Bogus`; previously the `now`
+  option of `VerifierOptions` was accepted and ignored, so such chains
+  could validate as `Secure`. New `DNSSecZone.set_clock`; without it a
+  `DNSSecZone` does not check the window, as before.
 
 ## [0.6.0] — 2026-05-20
 

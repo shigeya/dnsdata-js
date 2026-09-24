@@ -109,13 +109,22 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
     return result;
 }
 
+// new_zone returns an empty zone whose RRSIG checks use the verifier's
+// clock (RFC 4035 §5.3.1: a signature outside its validity window does
+// not verify).
+function new_zone(v: Verifier): DNSSecZone {
+    const zone = new DNSSecZone();
+    zone.set_clock(v.now);
+    return zone;
+}
+
 // validate_one_hop runs a single chain walk + leaf resolution
 // against (qname, qtype). It mutates result.chain / result.evidence
 // as it walks, but does NOT touch result.verdict / result.aliases
 // — that is validate()'s responsibility.
 async function validate_one_hop(v: Verifier, qname: string, qtype: number, result: Result, signal?: AbortSignal): Promise<HopOutcome> {
     // Step 1: load + verify the root zone.
-    const rootZone = new DNSSecZone();
+    const rootZone = new_zone(v);
     await load_records(v, rootZone, '.', TYPE_DNSKEY, result, signal);
 
     const rootKSK = match_ksk_with_anchors(v, rootZone);
@@ -175,7 +184,7 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
             };
         }
 
-        const childZone = new DNSSecZone();
+        const childZone = new_zone(v);
         childZone.parent = currentZone;
         await load_records(v, childZone, childName, TYPE_DNSKEY, result, signal);
 

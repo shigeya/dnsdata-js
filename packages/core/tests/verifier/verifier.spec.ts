@@ -752,3 +752,31 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
         expect(result.bogusReason).toMatch(new RegExp(`${MAX_ALIAS_HOPS}`));
     });
 });
+
+// The fixtures sign everything from INCEPTION to EXPIRE. A clock
+// outside that window must turn a Secure chain into Bogus
+// (RFC 4035 §5.3.1). Ports dnsdata-go verifier/validity_test.go.
+describe('Verifier RRSIG validity window', () => {
+    const TWO_DAYS_MS = 48 * 60 * 60 * 1000;
+    const cases: { name: string; clock: Date; want: Verdict }[] = [
+        { name: 'inside window', clock: new Date(), want: Verdict.Secure },
+        { name: 'after expiration', clock: new Date(EXPIRE * 1000 + TWO_DAYS_MS), want: Verdict.Bogus },
+        { name: 'before inception', clock: new Date(INCEPTION * 1000 - TWO_DAYS_MS), want: Verdict.Bogus },
+    ];
+    for (const tc of cases) {
+        it(tc.name, async () => {
+            const root = make_zone('.');
+            const com = make_zone('com.');
+            const example = make_zone('example.com.');
+            delegate(root, com);
+            delegate(com, example);
+            add_signed(example, 'www.example.com.', 'A', '192.0.2.1');
+
+            const resolver = new ZoneCollectionResolver([root.zone, com.zone, example.zone]);
+            const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => tc.clock });
+
+            const result = await v.validate('www.example.com.', TYPE_A);
+            expect(result.verdict).toBe(tc.want);
+        });
+    }
+});

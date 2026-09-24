@@ -262,8 +262,9 @@ Out of scope for the current line (tracked as TODO in `verifier/`):
 - Streamable step handler (SHOULD #14).
 - RFC 5011 automatic trust-anchor rollover (MAY #19).
 - Aggressive negative caching with NSEC / NSEC3 (MAY #18).
-- RRSIG validity-window check (the `now` option in `VerifierOptions`
-  is reserved for this).
+
+The RRSIG validity-window check is in place: the verifier sets its
+`now` clock on every `DNSSecZone` it builds (dnsdata-go UF-006).
 
 Per-version detail and PR / issue references live in the
 [CHANGELOG](./CHANGELOG.md). Cross-repo origin and feedback log:

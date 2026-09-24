@@ -7,6 +7,7 @@ import { domain_name2wire } from '../wire/dns_wire';
 import { StringToRRType, RRTypeName } from '../types/dns_type_table';
 import { Zone, ResourceRecord } from '../zone/dns_zone';
 import { GENERIC_RDATA_MARKER } from '../zone/generic';
+import { DNSZoneRDataFormatError } from '../dns_exception';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import { label_count, last_n_labels } from './dnssec_util';
 // As of P8, RR handler registration is opt-in via registerAllHandlers()
@@ -20,12 +21,33 @@ export enum KeyVerifyMode {
     CSK  = 0x04,
 }
 
+// Octets of RDLENGTH that prefix each RR body built by get_wire_body.
+const RDLENGTH_OCTETS = 2;
+const MILLISECONDS_PER_SECOND = 1000;
+
 export class DNSSecZone extends Zone {
     private seps: string[] = [];
     private _parent: DNSSecZone | null = null;
+    private _now: (() => Date) | null = null;
 
     get parent(): DNSSecZone | null { return this._parent; }
     set parent(zone: DNSSecZone | null) { this._parent = zone; }
+
+    // set_clock makes [verify_rrsig] reject an RRSIG whose validity
+    // window (RFC 4034 §3.1.5, RFC 4035 §5.3.1) does not contain now().
+    // Both ends are inclusive. With no clock set (the default, or null)
+    // the window is not checked. Ports dnsdata-go `Zone.SetClock`.
+    set_clock(now: (() => Date) | null): void {
+        this._now = now;
+    }
+
+    // within_validity reports whether rrsig's window contains the
+    // zone's clock, or true when no clock is set.
+    private within_validity(rrsig: RRSig): boolean {
+        if (this._now === null) return true;
+        const t = Math.floor(this._now().getTime() / MILLISECONDS_PER_SECOND);
+        return rrsig.inception <= t && t <= rrsig.expire;
+    }
 
     add_sep(name: string): void {
         this.seps.push(name);
@@ -97,19 +119,23 @@ export class DNSSecZone extends Zone {
             header = header_builder.build();
         }
 
-        // Build wire body for each RR, then sort by binary order
+        // Build wire body (RDLENGTH || RDATA) for each RR.
         const bodies: Uint8Array[] = [];
         for (const rr of rrset) {
             const body_builder = new WireBuilder();
             rr.get_wire_body(body_builder);
-            bodies.push(body_builder.build());
+            const body = body_builder.build();
+            if (body.length < RDLENGTH_OCTETS) {
+                throw new DNSZoneRDataFormatError(
+                    `no encoder for ${rr.label} ${RRTypeName(rr.type)}`);
+            }
+            bodies.push(body);
         }
-        bodies.sort(compare_uint8arrays);
 
         // Assemble: RRSIG RDATA (no sig) + for each sorted body: header + originalTTL + body
         const out = new WireBuilder();
         out.append_bytes(rrsig.get_rdata_digest_target());
-        for (const body of bodies) {
+        for (const body of canonical_rrset_order(bodies)) {
             out.append_bytes(header);
             out.append_uint32(rrsig.original_ttl);
             out.append_bytes(body);
@@ -117,9 +143,12 @@ export class DNSSecZone extends Zone {
         return out.build();
     }
 
-    // Verify a single RRSIG
+    // Verify a single RRSIG. A signature outside its validity window
+    // fails when a clock is set (see [set_clock]).
     verify_rrsig(name: string, type: number, rrsig: RRSig,
                  mode: KeyVerifyMode = KeyVerifyMode.None): boolean {
+        if (!this.within_validity(rrsig)) return false;
+
         // Find the corresponding DNSKEY
         const dnskey = this.find_dnskey(rrsig.signer, rrsig.key_tag);
         if (!dnskey) return false;
@@ -247,6 +276,18 @@ export class DNSSecZone extends Zone {
 
         return new ResourceRecord(label, ttl, 'IN', 'RRSIG', rrsig_value);
     }
+}
+
+// canonical_rrset_order returns the RR bodies (each RDLENGTH || RDATA)
+// in RFC 4034 §6.3 canonical order: sorted by the RDATA alone, so the
+// RDLENGTH prefix does not take part ("absence of an octet sorts
+// before a zero octet"), with duplicate RRs removed. Duplicates arise
+// when two responses deposit the same record, e.g. one NSEC answering
+// both a DS probe and the leaf query. dnsdata-go UF-005.
+function canonical_rrset_order(bodies: readonly Uint8Array[]): Uint8Array[] {
+    const sorted = [...bodies].sort((a, b) =>
+        compare_uint8arrays(a.subarray(RDLENGTH_OCTETS), b.subarray(RDLENGTH_OCTETS)));
+    return sorted.filter((body, i) => i === 0 || compare_uint8arrays(body, sorted[i - 1]) !== 0);
 }
 
 // wire_header_for_owner emits the canonical RR-header bytes

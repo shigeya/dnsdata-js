@@ -45,10 +45,9 @@ export interface VerifierOptions {
     trustAnchors?: RootAnchors;
 
     // Optional. Source of "now" used when comparing against RRSIG
-    // inception / expire windows. v0.1.0's underlying verify_rrsig
-    // does not yet consult the clock; this option is accepted for
-    // API parity with dnsdata-go and reserved for the expiry-check
-    // pass that lands with UP-006 (wildcard) / SHOULD #13.
+    // inception / expiration windows (RFC 4035 §5.3.1, both ends
+    // inclusive). A signature outside its window does not verify, so
+    // the chain is Bogus. Defaults to the system clock.
     now?: () => Date;
 
     // Optional. Pluggable cache consulted before every Resolver.query
@@ -62,8 +61,8 @@ export interface VerifierOptions {
 export class Verifier {
     readonly resolver: Resolver;
     readonly anchors: RootAnchors;
-    // Reserved; consulted once verify_rrsig grows a validity-window
-    // check (currently unused — kept for API parity with the Go side).
+    // Clock set on every DNSSecZone the chain walker builds; RRSIG
+    // validity windows are checked against it.
     readonly now: () => Date;
     readonly cache?: Cache;
 
