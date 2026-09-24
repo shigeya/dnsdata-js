@@ -202,7 +202,6 @@ describe('DoHClient transport', () => {
         // private slot — matches the white-box test in
         // client_internal_test.go.
         const c = new DoHClient({ providers: ['https://dns.example.com/dns-query'], timeout_ms: 2000 });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (c as any)._providers = [];
         await expect(c.query_raw(new Uint8Array([0x00]))).rejects.toBeInstanceOf(DoHNoProvidersError);
     });

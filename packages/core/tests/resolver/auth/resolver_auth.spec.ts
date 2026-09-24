@@ -10,7 +10,6 @@ import {
     AuthNoServersError,
     AuthAllServersFailedError,
     AuthIDMismatchError,
-    AuthResponseError,
     normalize_addr,
 } from '../../../src/resolver/auth/resolver_auth';
 import { domain_name2wire, build_query_with_id } from '../../../src/wire/dns_wire';

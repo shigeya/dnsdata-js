@@ -7,7 +7,6 @@
 // Fingerprint types: 1=SHA-1, 2=SHA-256 (RFC 6594)
 
 import { WireBuilder } from '../../wire/dns_wire_util';
-import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 

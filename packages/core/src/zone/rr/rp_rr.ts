@@ -12,7 +12,6 @@
 
 import { WireBuilder } from '../../wire/dns_wire_util';
 import { domain_name2wire } from '../../wire/dns_wire';
-import { StringToRRType } from '../../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError } from '../../dns_exception';
 
