@@ -14,6 +14,16 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-24
+
+Coordinated release with dnsdata-go v0.7.0 (port-back of UP-010..015
+and UF-005 / UF-006). Zone signing and offline validation: unknown RR
+types as first class, a strict zone reader, canonical output, a zone
+signer, an in-memory authority, and the validated answer on `Result`.
+No API is removed. Two validation fixes change verdicts: RRSIGs outside
+their validity window are now Bogus (UF-006), and RRsets whose members
+differ in length now verify in canonical order (UF-005).
+
 ### Added
 
 - The package entry point now exports the chain validator:
