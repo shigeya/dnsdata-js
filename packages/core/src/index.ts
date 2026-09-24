@@ -44,3 +44,7 @@ export * from './dnssec/root_anchors';
 // mirroring the Go package: signer.sign_zone, signer.Key, ...
 export * as signer from './dnssec/signer';
 export * from './resolver/doh';
+// The in-memory authority (dnsdata-go `resolver/memory`, UP-014) as a
+// namespace, mirroring the Go package: memory.new_authority,
+// memory.with_zone, memory.Authority, ...
+export * as memory from './resolver/memory';

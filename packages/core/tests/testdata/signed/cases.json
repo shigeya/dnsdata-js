@@ -1,0 +1,59 @@
+{
+  "description": "Signed hierarchy shared by dnsdata-go and dnsdata-js: a private root (trust anchor in root-anchors.json), test., and example.test., signed with the BIND keys in keys/ for 2026-01-01..2036-01-01. Serve the three zone files from an in-memory authority, validate each case at its clock, and expect the verdict. Keep these files byte-identical in both repositories.",
+  "cases": [
+    {
+      "qname": "www.example.test.",
+      "qtype": 1,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "secure"
+    },
+    {
+      "qname": "key.example.test.",
+      "qtype": 65400,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "secure"
+    },
+    {
+      "qname": "nope.example.test.",
+      "qtype": 1,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "secure-nxdomain"
+    },
+    {
+      "qname": "www.example.test.",
+      "qtype": 15,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "secure-nodata"
+    },
+    {
+      "qname": "x.wild.example.test.",
+      "qtype": 1,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "secure"
+    },
+    {
+      "qname": "alias.example.test.",
+      "qtype": 1,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "secure"
+    },
+    {
+      "qname": "www.insecure.test.",
+      "qtype": 1,
+      "clock": "2026-06-01T00:00:00Z",
+      "verdict": "insecure"
+    },
+    {
+      "qname": "www.example.test.",
+      "qtype": 1,
+      "clock": "2036-06-01T00:00:00Z",
+      "verdict": "bogus"
+    },
+    {
+      "qname": "www.example.test.",
+      "qtype": 1,
+      "clock": "2025-06-01T00:00:00Z",
+      "verdict": "bogus"
+    }
+  ]
+}

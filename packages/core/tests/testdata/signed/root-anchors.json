@@ -1,0 +1,13 @@
+{
+  "lastUpdated": "",
+  "source": "dnsdata-go/dnssec/signer",
+  "ds": [
+    {
+      "keyTag": 37756,
+      "algorithm": 13,
+      "digestType": 2,
+      "digest": "43767F1E006BC5DDD5F97C157D05113DF8A23F259F5222C95607B4D776A2115B"
+    }
+  ],
+  "dnskeys": null
+}

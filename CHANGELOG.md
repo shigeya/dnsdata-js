@@ -58,6 +58,25 @@ version?" question answerable at a glance.
   `registerAllHandlers()` call. Tests cross-check keys, DS and signed
   zones with BIND's `dnssec-keygen`, `dnssec-dsfromkey`,
   `named-checkzone` and `dnssec-verify` when those are on `PATH`.
+- In-memory authority `memory` (port of dnsdata-go UP-014,
+  `resolver/memory`), exported as a namespace from the package entry
+  point: `memory.new_authority(memory.with_zone(apex, zone), ...,
+  memory.with_fault(name, qtype, rcode))` returns a `memory.Authority`
+  implementing the verifier's `Resolver`. The deepest zone holding the
+  name answers, and a DS query for an apex goes to the parent; it
+  returns referrals (NS plus the signed DS or the NSEC proving none),
+  RRsets with their RRSIGs, CNAME, DNAME, wildcard synthesis (owner
+  rewritten to the query name, plus the next-closer NSEC), and NODATA /
+  NXDOMAIN with their NSEC proofs; REFUSED outside every zone. Responses
+  are fresh copies; the authority is immutable. NSEC3 proofs are not
+  generated. Configuration errors are `memory.MemoryConfigError`.
+  Validation under a private root needs no verifier change
+  (`signer.root_anchors` → `trustAnchors`, the clock via `now`); tests
+  and a documented example fix that use.
+- `tests/testdata/signed/`: a signed private root, `test.` and
+  `example.test.` with their BIND test keys, root anchors and expected
+  verdicts, shared byte for byte with dnsdata-go and validated to the
+  same nine verdicts.
 
 ### Fixed
 

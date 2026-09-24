@@ -73,6 +73,12 @@ mechanical:
 | `types/`                                  | `dns_type_table.ts`                  | RR-type / class / rcode / algorithm tables |
 | `dnssec/anchors.go`                       | `dnssec_key_loader.ts`, `root_anchors.ts` | Root trust anchors |
 | `resolver/auth/`                          | `resolver_auth.ts`                   | UDP / TCP authoritative-DNS client with TC-fallback + failover (UP-003 / [#7](https://github.com/shigeya/dnsdata-js/issues/7)) |
+| `resolver/memory/memory.go`               | `resolver/memory/memory.ts`          | `Authority`, `new_authority` (Go `New`), `with_zone`, `with_fault` (UP-014) |
+| `resolver/memory/index.go`                | `resolver/memory/zone_index.ts`, `resolver/memory/names.ts` | Per-zone index and name helpers (UP-014) |
+| `resolver/memory/answer.go`               | `resolver/memory/answer.ts`          | Referral / answer / CNAME / DNAME / wildcard / NODATA / NXDOMAIN responses (UP-014) |
+| (`ErrConfig` in `resolver/memory/memory.go`) | `resolver/memory/errors.ts`       | `MemoryConfigError` |
+| `resolver/memory/*_test.go`               | `tests/resolver/memory/*.spec.ts`    | Hierarchy, authority, example and shared-vector tests (UP-014) |
+| `testdata/signed/`                        | `tests/testdata/signed/`             | Shared signed hierarchy and expected verdicts; byte-identical, generated on the Go side only |
 | (distributed via per-package `errors.go`) | `dns_exception.ts`                   | TS-specific exception hierarchy (`DNSWireError`, `UnknownOpCodeError`, …); Go uses sentinel `errors.Is`-friendly vars per package |
 | (folded into `wire/` package)             | `dns_wire_util.ts`                   | TS-specific wire helpers; folded into Go's `wire/` package |
 | (not yet ported)                          | `rr/*.ts`                            | Modern RR handlers (CERT, CSYNC, DANE/TLSA/SMIMEA, EUI48/64, HINFO, LOC, NAPTR, OPENPGPKEY, OPT, RP, SSHFP, SVCB/HTTPS, URI) — TS only at this time |

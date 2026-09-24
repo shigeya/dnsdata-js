@@ -1,0 +1,31 @@
+example.test. 3600 IN NS ns1.example.test.
+example.test. 3600 IN SOA ns1.example.test. hostmaster.example.test. 1 7200 3600 1209600 300
+example.test. 3600 IN RRSIG NS 13 2 3600 2082758400 1767225600 35007 example.test. 0/2v4VQdGIC/TUJjx+ddW32Eis/nXZ0I9vR/2tsqEhNm1BU8wDiZIW9oZMfjMeplv/keCssylKot7SudJCbQlw==
+example.test. 3600 IN RRSIG SOA 13 2 3600 2082758400 1767225600 35007 example.test. KV9CaLKD3BmL7ECkI9a3AGJqMTM0oikWkkP589iNAGNcyd/xF7WwXvaZa1OH5BVCxjJ1BrwtlLfAyNI/FmtgfA==
+example.test. 300 IN RRSIG NSEC 13 2 300 2082758400 1767225600 35007 example.test. YA3A0Rp85tSRlUqogbqMqmAtY4nrWQA7n8ajRQzW7f3N2SyJZlsTMnPh5t3QPjkNC/VEap+DpM2Tx+6L5xrHkQ==
+example.test. 3600 IN RRSIG DNSKEY 13 2 3600 2082758400 1767225600 54840 example.test. NVuIXbBCugKp3HaH+z708EJ17xOlOuYMcRBivjRowA3Rdkmw4ZukSy/YAyf7CjABjGR3uIuI3WKh5IKTaIlTmg==
+example.test. 300 IN NSEC alias.example.test. NS SOA RRSIG NSEC DNSKEY
+example.test. 3600 IN DNSKEY 256 3 13 CCB4EAiNAIDtfIepBxtrWW2opDP1ud3wFKMz5okT1Mh76xaQfLkPhbjOfEZXSmjr5i5Ndr/nTfOl/SJIOekwOQ==
+example.test. 3600 IN DNSKEY 257 3 13 frqluVAiu4n2pCx1M0j42fqS7EeQ/XZ7LxX/XR2/hUUhQI3aOmx+TRFvAk5rx+vpN1YKf+HSVJCx7webm7vyQA==
+alias.example.test. 3600 IN CNAME www.example.test.
+alias.example.test. 3600 IN RRSIG CNAME 13 3 3600 2082758400 1767225600 35007 example.test. KFNxY/DioU3X5p0VdGRqp2P6enmFNbkEpICzLnEMZnW/2VDEiyYeLZkHOfoFgqVvtxzbSpnOWpYqT9IqtNSk9w==
+alias.example.test. 300 IN RRSIG NSEC 13 3 300 2082758400 1767225600 35007 example.test. xasHStGbTJ3+YH3CIOIHd/ohbY3ExjjmJqjt2tHkaRSSo6dDBUrFwrnNR4G6fDUnPnr4zLMxAmUFvrmsDtZOQA==
+alias.example.test. 300 IN NSEC key.example.test. CNAME RRSIG NSEC
+key.example.test. 300 IN RRSIG NSEC 13 3 300 2082758400 1767225600 35007 example.test. 1OzXRdqeo73RPAq7vhL3OdvgKe5MlwzgC1hb11bakowwXJE6IOeX90J+53nVut+Lkr8C9O5j3iEtPNADeMPsTg==
+key.example.test. 3600 IN RRSIG TYPE65400 13 3 3600 2082758400 1767225600 35007 example.test. KI6F4obQ6hMsnZBA1G+c+5uq86cexczQRqPWunpWysroW3krDll8HYgVRfzuQtriv/qMmC7Ib/5V0C0B2O2eBg==
+key.example.test. 300 IN NSEC ns1.example.test. RRSIG NSEC TYPE65400
+key.example.test. 3600 IN TYPE65400 \# 35 030101000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+ns1.example.test. 3600 IN A 192.0.2.1
+ns1.example.test. 3600 IN RRSIG A 13 3 3600 2082758400 1767225600 35007 example.test. Q12xVVeAiX1vj9LGuU8h9qZY8oS8Eg/KHrhjGa1E+/ak895vJatAMbAO7v+7EDArExKxqoArJqnNiv6ALO5czg==
+ns1.example.test. 300 IN RRSIG NSEC 13 3 300 2082758400 1767225600 35007 example.test. mqpOl34R5524NqJ3IieC0+QFDkPwrbYbNR9873DRrswe64C86v8X7YtGlPUPwKFlWwrD74w0VdUa0OMH672PHQ==
+ns1.example.test. 300 IN NSEC *.wild.example.test. A RRSIG NSEC
+*.wild.example.test. 3600 IN A 192.0.2.20
+*.wild.example.test. 3600 IN RRSIG A 13 3 3600 2082758400 1767225600 35007 example.test. qaOQ8LsIiH8TYQy3ks8l3a9/mk6Se1h4BA7NbbScXFcvv5amPPbowAbtJm9R1hVSuuPrxuZC+HT5gRSjSdao4g==
+*.wild.example.test. 300 IN RRSIG NSEC 13 3 300 2082758400 1767225600 35007 example.test. hq9PDdnLefmxyetYr7P5jsMrBGuKVvSP8KNOWqo3x5rvP0NeD71C3OtAymrxyDYb6MZWrlQG6lW9VbAd7Xs+ug==
+*.wild.example.test. 300 IN NSEC www.example.test. A RRSIG NSEC
+www.example.test. 3600 IN A 192.0.2.10
+www.example.test. 3600 IN TXT "hello"
+www.example.test. 3600 IN RRSIG A 13 3 3600 2082758400 1767225600 35007 example.test. MnRokT1y9HBe16OFNLEELQS32PMcMwu3BJtLNvi5p7Wu7Ai+VTorgRmRpAZGX/8/W/AkyqYDhbeGkMRHmWgXoA==
+www.example.test. 3600 IN RRSIG TXT 13 3 3600 2082758400 1767225600 35007 example.test. TvhMB9GzVyPqyXjQ4TJNx6VOK7fH0iuo1mInfn8LIFGo2WK9qlH32IfgMgIstCKCo4BMBGrv6Kra2/2QjIWVfQ==
+www.example.test. 300 IN RRSIG NSEC 13 3 300 2082758400 1767225600 35007 example.test. exfHE6b/6Jc+vk8Tzxvchzs80gUu9x/bDmtcCPR+13FhA2VR6MBwCVRuJq229Uef0MXeOq37nFVeNO7AfQsJXw==
+www.example.test. 300 IN NSEC example.test. A TXT RRSIG NSEC
