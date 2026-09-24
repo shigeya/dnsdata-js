@@ -14,6 +14,29 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Added
+
+- RFC 3597 unknown types (port of dnsdata-go UP-010). `StringToRRType` /
+  `StringToRRClass` accept `TYPE<n>` / `CLASS<n>` (case-insensitive);
+  new `RRTypeName` / `RRClassName` never throw. New
+  `parse_generic_rdata`, `new_resource_record_from_rdata`,
+  `ResourceRecord.generic_rdata`, `ResourceRecord.txt_strings`, and
+  `format_generic_rdata` (the former `rfc3597`, which stays as an
+  alias).
+- `tests/testdata/rdata_roundtrip.json`: RDATA round-trip vectors
+  shared byte for byte with dnsdata-go.
+
+### Fixed
+
+- A value in `\# <len> <hex>` form is written verbatim by
+  `get_wire_body` for any type, ahead of any handler. Previously
+  TLSA / SMIMEA / SVCB / HTTPS / unknown RDATA received from the wire
+  encoded to nothing, so a correctly signed RRset of those types
+  validated as bogus. `get_handler` decodes such values by type.
+- `DNSSecZone.sign_rr`, `find_rrsigs`, RRSIG presentation, NSEC / NSEC3
+  bitmaps, `ResourceRecord.to_string` and the DoH / authoritative
+  resolvers no longer throw on types or classes without a mnemonic.
+
 ## [0.6.0] — 2026-05-20
 
 Coordinated release with dnsdata-go v0.6.0 and mailsec-probe v0.6.0.

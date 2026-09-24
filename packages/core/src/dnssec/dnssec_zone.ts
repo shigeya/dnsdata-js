@@ -4,8 +4,9 @@
 
 import { WireBuilder, compare_uint8arrays } from '../wire/dns_wire_util';
 import { domain_name2wire } from '../wire/dns_wire';
-import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
+import { StringToRRType, RRTypeName } from '../types/dns_type_table';
 import { Zone, ResourceRecord } from '../zone/dns_zone';
+import { GENERIC_RDATA_MARKER } from '../zone/generic';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import { label_count, last_n_labels } from './dnssec_util';
 // As of P8, RR handler registration is opt-in via registerAllHandlers()
@@ -37,12 +38,13 @@ export class DNSSecZone extends Zone {
     find_rrsigs(name: string, type_covered: number, signer?: string): RRSig[] {
         const rrsig_type = StringToRRType('RRSIG');
         const candidates = this.find_rrset(name, rrsig_type);
-        const type_str = RRTypeToString(type_covered);
+        const type_str = RRTypeName(type_covered);
         const result: RRSig[] = [];
 
         for (const rr of candidates) {
-            // Quick check: value should start with the type name
-            if (!rr.value.startsWith(type_str + ' ')) continue;
+            // Quick check: value should start with the type name, unless
+            // it is RFC 3597 generic RDATA (decoded by get_handler).
+            if (!rr.value.startsWith(type_str + ' ') && !rr.value.startsWith(GENERIC_RDATA_MARKER + ' ')) continue;
 
             const handler = rr.get_handler();
             if (handler instanceof RRSig && handler.type_covered === type_covered) {
@@ -240,7 +242,7 @@ export class DNSSecZone extends Zone {
 
         // Reconstruct the RRSIG with signature in its value string
         const sig_b64 = Buffer.from(signature).toString('base64');
-        const rrsig_value = `${RRTypeToString(type)} ${key.algorithm} ${rrsig.labels} ` +
+        const rrsig_value = `${RRTypeName(type)} ${key.algorithm} ${rrsig.labels} ` +
             `${ttl} ${expire} ${inception} ${key.key_tag} ${key.label} ${sig_b64}`;
 
         return new ResourceRecord(label, ttl, 'IN', 'RRSIG', rrsig_value);

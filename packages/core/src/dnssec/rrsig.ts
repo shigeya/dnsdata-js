@@ -2,7 +2,7 @@
 
 import { WireBuilder } from '../wire/dns_wire_util';
 import { domain_name2wire } from '../wire/dns_wire';
-import { StringToRRType, RRTypeToString } from '../types/dns_type_table';
+import { StringToRRType, RRTypeName } from '../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler } from '../zone/dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';
 import { DNSKey } from './dnskey';
@@ -102,7 +102,7 @@ export class RRSig extends ResourceRecordHandler {
 
     get_value_string(): string {
         const sig_b64 = Buffer.from(this.signature).toString('base64');
-        return `${RRTypeToString(this.type_covered)} ${this.algorithm} ${this.labels} ` +
+        return `${RRTypeName(this.type_covered)} ${this.algorithm} ${this.labels} ` +
             `${this.original_ttl} ${this.expire} ${this.inception} ` +
             `${this.key_tag} ${this.signer} ${sig_b64}`;
     }

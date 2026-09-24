@@ -20,7 +20,7 @@
 // `\# <rdlen> <hex>`.
 
 import { parse_domain_name } from './dns_wire';
-import { RRTypeToString, StringToRRType } from '../types/dns_type_table';
+import { RRTypeName, StringToRRType } from '../types/dns_type_table';
 import { DNSRDataDecodeError } from '../dns_exception';
 
 const TYPE_A          = StringToRRType('A');
@@ -72,16 +72,21 @@ export function rdata_to_string(msg: Uint8Array, rrtype: number, rdata: Uint8Arr
         case TYPE_NSEC:       return decode_nsec(msg, rdata, rdataStart);
         case TYPE_NSEC3:      return decode_nsec3(rdata);
         case TYPE_NSEC3PARAM: return decode_nsec3param(rdata);
-        default:              return rfc3597(rdata);
+        default:              return format_generic_rdata(rdata);
     }
 }
 
-// RFC 3597 §5 unknown-type generic form: `\# <rdlen> <hex>`.
-// Exported so callers handling unknown types directly can reuse it.
-export function rfc3597(rdata: Uint8Array): string {
+// format_generic_rdata emits the unknown-type generic form per RFC 3597
+// §5: `\# <rdlen> <hex>` (or `\# 0` for empty RDATA). The zone module
+// accepts this form for any RR type, known or not, and writes the
+// bytes back verbatim.
+export function format_generic_rdata(rdata: Uint8Array): string {
     if (rdata.length === 0) return `\\# 0`;
     return `\\# ${rdata.length} ${to_hex_lower(rdata)}`;
 }
+
+// Former name of format_generic_rdata, kept for existing callers.
+export const rfc3597 = format_generic_rdata;
 
 function decode_a(rdata: Uint8Array): string {
     if (rdata.length !== 4) {
@@ -277,8 +282,7 @@ function decode_rrsig(msg: Uint8Array, rdata: Uint8Array, rdataStart: number): s
         throw new DNSRDataDecodeError('RRSIG signer extends past rdata');
     }
     const signature = Buffer.from(msg.subarray(next, rdataStart + rdata.length)).toString('base64');
-    const typeName = qtype_mnemonic(typeCovered);
-    return `${typeName} ${algorithm} ${labels} ${originalTTL} ${expire} ${inception} ${keyTag} ${signer} ${signature}`;
+    return `${RRTypeName(typeCovered)} ${algorithm} ${labels} ${originalTTL} ${expire} ${inception} ${keyTag} ${signer} ${signature}`;
 }
 
 function decode_nsec(msg: Uint8Array, rdata: Uint8Array, rdataStart: number): string {
@@ -290,7 +294,7 @@ function decode_nsec(msg: Uint8Array, rdata: Uint8Array, rdataStart: number): st
     }
     const bitmap = msg.subarray(next, rdataStart + rdata.length);
     const types = decode_bitmap(bitmap);
-    return [nextDomain, ...types.map(qtype_mnemonic)].join(' ');
+    return [nextDomain, ...types.map(RRTypeName)].join(' ');
 }
 
 function decode_nsec3(rdata: Uint8Array): string {
@@ -326,7 +330,7 @@ function decode_nsec3(rdata: Uint8Array): string {
         `${iterations}`,
         saltStr,
         base32hex_encode(nextHash),
-        ...types.map(qtype_mnemonic),
+        ...types.map(RRTypeName),
     ];
     return parts.join(' ');
 }
@@ -409,14 +413,6 @@ function to_hex_lower(b: Uint8Array): string {
 
 function to_hex_upper(b: Uint8Array): string {
     return Buffer.from(b).toString('hex').toUpperCase();
-}
-
-function qtype_mnemonic(t: number): string {
-    try {
-        return RRTypeToString(t);
-    } catch {
-        return `TYPE${t}`;
-    }
 }
 
 function error_message(err: unknown): string {

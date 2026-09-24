@@ -4,19 +4,43 @@
 
 import { WireBuilder } from '../wire/dns_wire_util';
 import { domain_name2wire } from '../wire/dns_wire';
-import { StringToRRType, StringToRRClass, RRTypeToString, RRClassToString } from '../types/dns_type_table';
+import { rdata_to_string, format_generic_rdata } from '../wire/rdata_decoder';
+import { StringToRRType, StringToRRClass, RRTypeName, RRClassName } from '../types/dns_type_table';
 import { DNSZoneRDataFormatError } from '../dns_exception';
+import {
+    GENERIC_RDATA_MARKER,
+    MAX_RDATA_LENGTH,
+    parse_generic_rdata,
+    split_character_strings,
+    tlsa_presentation,
+} from './generic';
 
 // Type aliases
 export type ns_type = number;
 export type ns_class = number;
 
+const TYPE_TXT    = 16;
+const TYPE_TLSA   = 52;
+const TYPE_SMIMEA = 53;
+
 // Handler registry for extensible RR type handling (used by dnssec_rr.ts)
 type HandlerFactory = (rr: ResourceRecord, value: string) => ResourceRecordHandler;
+// Builds a handler straight from RDATA octets, for types whose octets do
+// not go through rdata_to_string (SVCB / HTTPS).
+type HandlerRDataFactory = (rr: ResourceRecord, rdata: Uint8Array) => ResourceRecordHandler;
 const handler_registry = new Map<ns_type, HandlerFactory>();
+const rdata_factory_registry = new Map<ns_type, HandlerRDataFactory>();
 
-export function register_rr_handler(type: ns_type, factory: HandlerFactory): void {
+// rdata_factory, when given, decodes a value held in RFC 3597 generic
+// form; without it such a value is decoded through rdata_to_string.
+export function register_rr_handler(type: ns_type, factory: HandlerFactory,
+                                    rdata_factory?: HandlerRDataFactory): void {
     handler_registry.set(type, factory);
+    if (rdata_factory) {
+        rdata_factory_registry.set(type, rdata_factory);
+    } else {
+        rdata_factory_registry.delete(type);
+    }
 }
 
 // RR types that ResourceRecord encodes inline (no separate handler).
@@ -170,14 +194,58 @@ export class ResourceRecord {
         this.value = value;
     }
 
+    // A value in RFC 3597 generic form (`\# <len> <hex>`) is decoded from
+    // its octets by type, so a known type received as generic RDATA still
+    // yields its structured handler (null when the octets do not decode).
     get_handler(): ResourceRecordHandler | null {
         if (this.handler !== null) return this.handler;
 
         const factory = handler_registry.get(this.type);
-        if (factory) {
-            this.handler = factory(this, this.value);
+        if (!factory) return null;
+
+        let raw: Uint8Array | null;
+        try {
+            raw = this.generic_rdata();
+        } catch {
+            return null;
         }
+        this.handler = raw === null ? factory(this, this.value) : this._handler_from_generic(factory, raw);
         return this.handler;
+    }
+
+    // Returns the RDATA octets when value is in the RFC 3597 generic form,
+    // null for any other value. Throws DNSZonePresentationFormatError for
+    // malformed generic RDATA.
+    generic_rdata(): Uint8Array | null {
+        return parse_generic_rdata(this.value);
+    }
+
+    // Returns the character-strings of a TXT record, whether its value is
+    // in presentation form or in RFC 3597 generic form.
+    txt_strings(): string[] {
+        if (this.type !== TYPE_TXT) {
+            throw new DNSZoneRDataFormatError(`txt_strings on type ${RRTypeName(this.type)}`);
+        }
+        const raw = this.generic_rdata();
+        return raw === null ? parse_txt_value(this.value) : split_character_strings(raw);
+    }
+
+    // Builds the handler for a record held in generic form. Only consulted
+    // when a factory is registered for the type, so handler registration
+    // stays opt-in. Returns null when the octets do not decode.
+    private _handler_from_generic(factory: HandlerFactory, rdata: Uint8Array): ResourceRecordHandler | null {
+        try {
+            const rdata_factory = rdata_factory_registry.get(this.type);
+            if (rdata_factory) return rdata_factory(this, rdata);
+            if (this.type === TYPE_TLSA || this.type === TYPE_SMIMEA) {
+                return factory(this, tlsa_presentation(rdata));
+            }
+            const pres = rdata_to_string(rdata, this.type, rdata, 0);
+            if (pres.startsWith(GENERIC_RDATA_MARKER)) return null;
+            return factory(this, pres);
+        } catch {
+            return null;
+        }
     }
 
     // Wire format: owner_name(wire) + type(2) + class(2)
@@ -189,8 +257,20 @@ export class ResourceRecord {
     }
 
     // Wire format body: rdlength(2) + rdata
-    // Delegates to handler if available, otherwise builds per-type
+    // Delegates to handler if available, otherwise builds per-type.
+    //
+    // A value in RFC 3597 generic form is written verbatim for any type,
+    // ahead of any handler, so its octets (and hence its canonical form)
+    // never pass through a re-encoding. Malformed generic RDATA throws
+    // DNSZonePresentationFormatError.
     get_wire_body(builder: WireBuilder): void {
+        const raw = this.generic_rdata();
+        if (raw !== null) {
+            builder.append_uint16(raw.length);
+            builder.append_bytes(raw);
+            return;
+        }
+
         const h = this.get_handler();
         if (h !== null) {
             h.get_wire_body(builder);
@@ -320,8 +400,20 @@ export class ResourceRecord {
     }
 
     to_string(): string {
-        return `${this.label} ${this.ttl} ${RRClassToString(this.rrclass)} ${RRTypeToString(this.type)} ${this.value}`;
+        return `${this.label} ${this.ttl} ${RRClassName(this.rrclass)} ${RRTypeName(this.type)} ${this.value}`;
     }
+}
+
+// Builds a record whose value is the RFC 3597 generic form of rdata. The
+// record's wire form is rdata verbatim for any type, which keeps the
+// canonical form of received data intact. Throws DNSZoneRDataFormatError
+// when rdata exceeds 65535 octets.
+export function new_resource_record_from_rdata(label: string, ttl: number, rrclass: ns_class,
+                                               type: ns_type, rdata: Uint8Array): ResourceRecord {
+    if (rdata.length > MAX_RDATA_LENGTH) {
+        throw new DNSZoneRDataFormatError(`RDATA length ${rdata.length}`);
+    }
+    return new ResourceRecord(label, ttl, rrclass, type, format_generic_rdata(rdata));
 }
 
 // Zone: collection of resource records with zone file parsing

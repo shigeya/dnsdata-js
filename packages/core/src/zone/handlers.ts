@@ -17,7 +17,7 @@ import { StringToRRType } from '../types/dns_type_table';
 import { register_rr_handler } from './dns_zone';
 import { DNSRR_TLSA, DNSRR_SMIMEA } from './rr/dane_rr';
 import { DNSRR_SSHFP } from './rr/sshfp_rr';
-import { DNSRR_SVCB } from './rr/svcb_rr';
+import { DNSRR_SVCB, svcb_from_rdata } from './rr/svcb_rr';
 import { DNSRR_EUI } from './rr/eui_rr';
 import { DNSRR_HINFO } from './rr/hinfo_rr';
 import { DNSRR_RP } from './rr/rp_rr';
@@ -33,8 +33,9 @@ export function register_legacy_handlers(): void {
     register_rr_handler(StringToRRType('SMIMEA'), (rr, value) => new DNSRR_SMIMEA(rr, value));
     register_rr_handler(StringToRRType('SSHFP'), (rr, value) => new DNSRR_SSHFP(rr, value));
     // RFC 9460 §9: HTTPS shares wire/presentation format with SVCB.
-    register_rr_handler(StringToRRType('SVCB'),  (rr, value) => new DNSRR_SVCB(rr, value));
-    register_rr_handler(StringToRRType('HTTPS'), (rr, value) => new DNSRR_SVCB(rr, value));
+    // RFC 3597 generic values are decoded from their octets directly.
+    register_rr_handler(StringToRRType('SVCB'),  (rr, value) => new DNSRR_SVCB(rr, value), svcb_from_rdata);
+    register_rr_handler(StringToRRType('HTTPS'), (rr, value) => new DNSRR_SVCB(rr, value), svcb_from_rdata);
     register_rr_handler(StringToRRType('EUI48'), (rr, value) => new DNSRR_EUI(rr, value, 6));
     register_rr_handler(StringToRRType('EUI64'), (rr, value) => new DNSRR_EUI(rr, value, 8));
     register_rr_handler(StringToRRType('HINFO'), (rr, value) => new DNSRR_HINFO(rr, value));

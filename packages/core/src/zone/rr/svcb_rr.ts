@@ -11,10 +11,9 @@
 // HTTPS (type 65) uses the same RDATA encoding as SVCB (type 64).
 
 import { WireBuilder } from '../../wire/dns_wire_util';
-import { domain_name2wire } from '../../wire/dns_wire';
-import { StringToRRType } from '../../types/dns_type_table';
+import { domain_name2wire, parse_domain_name } from '../../wire/dns_wire';
 import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
-import { DNSZonePresentationFormatError } from '../../dns_exception';
+import { DNSZonePresentationFormatError, DNSZoneRDataFormatError } from '../../dns_exception';
 
 // RFC 9460 §14.3.2: Initial SvcParamKey registry
 const SVCPARAM_KEY_MAP: Record<string, number> = {
@@ -28,9 +27,16 @@ const SVCPARAM_KEY_MAP: Record<string, number> = {
 };
 
 // RFC 9460 §2.1: SvcParam representation
-interface SvcParam {
+export interface SvcParam {
     key: number;
     value: Uint8Array;
+}
+
+// Decoded SVCB / HTTPS RDATA fields.
+export interface SvcbFields {
+    priority: number;
+    target: string;
+    params: readonly SvcParam[];
 }
 
 // RFC 9460 §2.2: Parse a SvcParamKey from presentation format
@@ -188,8 +194,16 @@ export class DNSRR_SVCB extends ResourceRecordHandler {
     readonly target: string;
     readonly params: SvcParam[];
 
-    constructor(rr: ResourceRecord | null, value: string) {
+    // value is either the presentation form or already-decoded fields
+    // (see svcb_from_rdata).
+    constructor(rr: ResourceRecord | null, value: string | SvcbFields) {
         super(rr);
+        if (typeof value !== 'string') {
+            this.priority = value.priority;
+            this.target = value.target;
+            this.params = value.params.map(p => ({ key: p.key, value: p.value.slice() }));
+            return;
+        }
         // Parse: "{priority} {target} [key=value ...]"
         const tokens = value.trim().split(/\s+/);
         if (tokens.length < 2) {
@@ -229,8 +243,49 @@ export class DNSRR_SVCB extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_SVCB {
-        return new DNSRR_SVCB(this._rr, this.value);
+        return new DNSRR_SVCB(this._rr, {
+            priority: this.priority,
+            target: this.target,
+            params: this.params,
+        });
     }
+}
+
+// SvcPriority(2) + at least the root label(1).
+const SVCB_MIN_LENGTH = 3;
+// SvcParamKey(2) + SvcParamValueLength(2).
+const SVCPARAM_HEADER_LENGTH = 4;
+
+// svcb_from_rdata decodes SVCB / HTTPS wire octets (RFC 9460 §2.2) into
+// a handler. Param values are kept as octets, so no presentation round
+// trip is involved. Throws DNSZoneRDataFormatError on malformed input.
+export function svcb_from_rdata(rr: ResourceRecord | null, rdata: Uint8Array): DNSRR_SVCB {
+    if (rdata.length < SVCB_MIN_LENGTH) {
+        throw new DNSZoneRDataFormatError(`SVCB rdata length ${rdata.length}`);
+    }
+    let target: string;
+    let pos: number;
+    try {
+        ({ name: target, next: pos } = parse_domain_name(rdata, 2));
+    } catch (err) {
+        throw new DNSZoneRDataFormatError(`SVCB target: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const params: SvcParam[] = [];
+    while (pos < rdata.length) {
+        if (pos + SVCPARAM_HEADER_LENGTH > rdata.length) {
+            throw new DNSZoneRDataFormatError('SVCB param header truncated');
+        }
+        const key = (rdata[pos] << 8) | rdata[pos + 1];
+        const n = (rdata[pos + 2] << 8) | rdata[pos + 3];
+        pos += SVCPARAM_HEADER_LENGTH;
+        if (pos + n > rdata.length) {
+            throw new DNSZoneRDataFormatError(`SVCB param ${key} value truncated`);
+        }
+        params.push({ key, value: rdata.slice(pos, pos + n) });
+        pos += n;
+    }
+    const priority = (rdata[0] << 8) | rdata[1];
+    return new DNSRR_SVCB(rr, { priority, target, params });
 }
 
 // Register SVCB (type 64) handler

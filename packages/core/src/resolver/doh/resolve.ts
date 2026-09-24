@@ -23,7 +23,7 @@
 import { parse_message, RawRR } from '../../wire/dns_message';
 import { rdata_to_string } from '../../wire/rdata_decoder';
 import { ResourceRecord, ns_class, ns_type } from '../../zone/dns_zone';
-import { RRClassToString, RRTypeToString } from '../../types/dns_type_table';
+import { RRClassName, RRTypeName } from '../../types/dns_type_table';
 import { ResolverResponse } from '../response';
 import { DoHClient } from './client';
 import { DoHResponseError } from './errors';
@@ -87,8 +87,8 @@ function raw_to_record(raw: Uint8Array, rr: RawRR): ResourceRecord {
         throw new DoHResponseError(`rdata decode: ${error_message(err)}`);
     }
     try {
-        const type_name = RRTypeToString(rr.type as ns_type);
-        const class_name = RRClassToString(rr.class as ns_class);
+        const type_name = RRTypeName(rr.type as ns_type);
+        const class_name = RRClassName(rr.class as ns_class);
         return new ResourceRecord(rr.name, rr.ttl, class_name, type_name, value);
     } catch (err) {
         throw new DoHResponseError(`construct record: ${error_message(err)}`);

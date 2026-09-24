@@ -189,8 +189,51 @@ export function RRTypeToString(type: ns_type)
     }
 }
 
+// RFC 3597 §5 generic mnemonics: any RR type may be written as
+// `TYPE<n>` and any class as `CLASS<n>` (decimal, 0–65535, prefix
+// matched case-insensitively).
+const GENERIC_TYPE_PREFIX = 'TYPE';
+const GENERIC_CLASS_PREFIX = 'CLASS';
+const MAX_UINT16 = 0xFFFF;
+
+// Parses `<prefix><decimal>` case-insensitively. Returns null for
+// anything else, including signs, whitespace and out-of-range values.
+function parse_generic_mnemonic(str: string, prefix: string): number | null {
+    if (str.length <= prefix.length) return null;
+    if (str.slice(0, prefix.length).toUpperCase() !== prefix) return null;
+    const digits = str.slice(prefix.length);
+    if (!/^[0-9]+$/.test(digits)) return null;
+    const n = Number(digits);
+    return n <= MAX_UINT16 ? n : null;
+}
+
+// RRTypeName returns the mnemonic for type, falling back to the RFC 3597
+// `TYPE<n>` form for types without one. It never throws, so it is the
+// right choice wherever presentation output needs a type name.
+export function RRTypeName(type: ns_type): string {
+    try {
+        return RRTypeToString(type);
+    } catch {
+        return `${GENERIC_TYPE_PREFIX}${type}`;
+    }
+}
+
+// RRClassName returns the mnemonic for klass, falling back to the
+// RFC 3597 `CLASS<n>` form for classes without one.
+export function RRClassName(klass: ns_class): string {
+    try {
+        return RRClassToString(klass);
+    } catch {
+        return `${GENERIC_CLASS_PREFIX}${klass}`;
+    }
+}
+
+// StringToRRType is the inverse of RRTypeToString. It also accepts the
+// RFC 3597 §5 generic form `TYPE<n>` (case-insensitive) for any type.
 export function StringToRRType(str: string) : ns_type
 {
+    const generic = parse_generic_mnemonic(str, GENERIC_TYPE_PREFIX);
+    if (generic !== null) return generic;
     switch (str) {
     case "INVALID" /*ns_t_invalid*/:  return 0;       // Cookie.
     case "A" /*ns_t_a*/:        return 1;             // Host address.
@@ -300,8 +343,12 @@ export function RRClassToString(klass: ns_class)
     }
 }
 
+// StringToRRClass is the inverse of RRClassToString. It also accepts
+// the RFC 3597 §5 generic form `CLASS<n>` (case-insensitive).
 export function StringToRRClass(str: string) : ns_class
 {
+    const generic = parse_generic_mnemonic(str, GENERIC_CLASS_PREFIX);
+    if (generic !== null) return generic;
     switch (str) {
     case "INVALID" /*ns_c_invalid*/:	return 0;	// Cookie
     case "IN" /*ns_c_in*/:	            return 1;		// Internet
