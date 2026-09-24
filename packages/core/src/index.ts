@@ -40,4 +40,7 @@ export * from './dnssec/dnssec_key_loader';
 export * from './dnssec/dnssec_rr';
 export * from './dnssec/dnssec_zone';
 export * from './dnssec/root_anchors';
+// The zone signer (dnsdata-go `dnssec/signer`, UP-013) as a namespace,
+// mirroring the Go package: signer.sign_zone, signer.Key, ...
+export * as signer from './dnssec/signer';
 export * from './resolver/doh';

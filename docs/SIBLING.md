@@ -63,6 +63,12 @@ mechanical:
 | `zone/canonical.go`                       | `zone/canonical.ts`                  | `compare_canonical_names`, canonical sort behind `Zone.records_canonical` (UP-012) |
 | `dnssec/zone.go`                          | `dnssec_zone.ts`                     | `DNSSecZone`, chain-of-trust verification helpers, canonical digest target |
 | `dnssec/{dnskey,rrsig,ds,nsec,nsec3}.go`  | `dnssec_rr.ts`                       | `DNSKey`, `RRSig`, `DNSRR_DS`, `DNSRR_NSEC`, `DNSRR_NSEC3` |
+| `dnssec/signer/key.go`                    | `dnssec/signer/key.ts`               | `Key`, `generate_key`, `new_key`, `parse_pkcs8_pem`, DNSKEY flag constants (UP-013) |
+| `dnssec/signer/bind.go`                   | `dnssec/signer/bind.ts`              | `parse_bind_private`, on top of `dnssec_key_loader.ts` (UP-013) |
+| `dnssec/signer/ds.go`                     | `dnssec/signer/ds.ts`                | `Key.ds`, `Key.anchor_ds`, `root_anchors` (UP-013) |
+| `dnssec/signer/nsec.go`                   | `dnssec/signer/nsec.ts`, `dnssec/signer/names.ts` | `build_nsec`, zone view, name helpers (UP-013) |
+| `dnssec/signer/sign.go`                   | `dnssec/signer/sign.ts`              | `sign_zone`, `SignOptions`, `rrsig_labels` (in `names.ts`) (UP-013) |
+| (sentinel errors in `dnssec/signer/key.go`) | `dnssec/signer/errors.ts`          | `SignerError`, `SignerKeyFormatError`, `SignerUnsupportedAlgorithmError` |
 | `verifier/`                               | `verifier.ts`                        | Chain-of-trust walker with pluggable `Resolver` |
 | `types/`                                  | `dns_type_table.ts`                  | RR-type / class / rcode / algorithm tables |
 | `dnssec/anchors.go`                       | `dnssec_key_loader.ts`, `root_anchors.ts` | Root trust anchors |

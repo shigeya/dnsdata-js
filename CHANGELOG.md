@@ -36,6 +36,28 @@ version?" question answerable at a glance.
   canonical order (owner, type, class, RDATA octets) with exact
   duplicates removed. The DNSSEC helper of the same name now delegates
   to it with identical results; `print` is unchanged.
+- Zone signer `signer` (port of dnsdata-go UP-013, `dnssec/signer`),
+  exported as a namespace from the package entry point:
+  `signer.generate_key` (algorithms 13, 14, 15, 8, 10, via Node
+  `crypto`), `signer.new_key`, `signer.parse_pkcs8_pem` /
+  `Key.pkcs8_pem`, `signer.parse_bind_private` (BIND `K*.private`,
+  reusing `dnssec_key_loader`); `Key.ds` / `Key.anchor_ds` (digest
+  types 2 and 4) and `signer.root_anchors` for a self-made root usable
+  as the verifier's `trustAnchors`; `signer.build_nsec` and
+  `signer.sign_zone` (KSK/ZSK split or CSK, NSEC chain, delegations and
+  glue handled, RRSIG Labels per RFC 4034 §3.1.3 so the root and
+  wildcards are right; the existing dot-counting `RRSig` constructor is
+  unchanged). `sign_zone` returns a new zone, leaves its input alone,
+  drops RRSIG / NSEC / NSEC3 / NSEC3PARAM before re-signing, and
+  requires `inception` / `expiration` (the signer never reads the
+  clock). Errors are `SignerError` and its subclasses
+  `SignerKeyFormatError` / `SignerUnsupportedAlgorithmError`. Like the
+  Go side, `sign_zone` and `build_nsec` register the bundled RR handlers
+  themselves (the same, idempotent registration as
+  `registerAllHandlers`), so they work without a prior
+  `registerAllHandlers()` call. Tests cross-check keys, DS and signed
+  zones with BIND's `dnssec-keygen`, `dnssec-dsfromkey`,
+  `named-checkzone` and `dnssec-verify` when those are on `PATH`.
 
 ### Fixed
 
