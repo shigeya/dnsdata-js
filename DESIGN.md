@@ -44,10 +44,12 @@ port-backs are mechanical.
 |---|---|---|
 | `types/` | RR type / class / opcode / rcode / DNSSEC algorithm enums + bidirectional string conversion | `types/` |
 | `wire/` | DNS wire-format codec — names (with RFC 1035 §4.1.4 compression), `WireBuilder`, message parser, per-type RDATA → presentation decoders, query builder | `wire/` |
-| `zone/` | Zone-file parser, `ResourceRecord`, pluggable RR-type handler registry, legacy RR set under `zone/rr/` | `zone/` |
+| `zone/` | Zone-file parser (lenient `read_string` and strict `read_string_strict`), canonical-order output, RFC 3597 generic RDATA, `ResourceRecord`, pluggable RR-type handler registry, legacy RR set under `zone/rr/` | `zone/` |
 | `dnssec/` | `DNSKey` / `RRSig` / `DNSRR_DS` / `DNSRR_NSEC` / `DNSRR_NSEC3` handlers, `DNSSecZone`, root trust anchors, canonical-name helpers | `dnssec/` |
+| `dnssec/signer/` | Zone signer: key generation and loading, DS / trust-anchor derivation, NSEC chain, `sign_zone` (exported as the `signer` namespace) | `dnssec/signer/` |
 | `resolver/doh/` | RFC 8484 DoH client with Cloudflare / Google / Quad9 sequential failover | `resolver/doh/` |
 | `resolver/auth/` | UDP + TCP authoritative-DNS client with TC-fallback and multi-server failover | `resolver/auth/` |
+| `resolver/memory/` | In-memory authority serving signed zones to the verifier, for tests and private roots (exported as the `memory` namespace) | `resolver/memory/` |
 | `verifier/` | DNSSEC chain-of-trust walker (`Verifier.validate(qname, qtype, signal?) → Promise<Result>`) | `verifier/` |
 | `cli/` | Reference CLI (`cli/main.ts`); not part of the library public API | (no Go counterpart) |
 
@@ -77,7 +79,7 @@ const result: Result = await verifier.validate(
 interface VerifierOptions {
     resolver: Resolver;                     // required transport
     trustAnchors?: RootAnchors;             // overrides IANA roots
-    now?: () => Date;                       // RRSIG window source (reserved)
+    now?: () => Date;                       // clock for the RRSIG validity window
     cache?: Cache;                          // pluggable cache (UP-008)
 }
 
@@ -211,11 +213,10 @@ Idiom mapping applied:
 20. Call `process.exit`.
 21. Produce side effects from importing `@dnsdata/core` that change
     the handler registry. RR handler installation is opt-in via
-    `registerAllHandlers()`. (Per-handler-module imports such as
-    `import './dnssec/dnssec_rr'` still register at import time as a
-    TS-specific implementation detail of those files; the public
-    entry point does not pull them transitively. Documented in
-    [`docs/SIBLING.md`](docs/SIBLING.md) §TS-specific surface.)
+    `registerAllHandlers()` (or `register_dnssec_handlers` /
+    `register_legacy_handlers`); no module registers anything at
+    import time. As on the Go side, `signer.sign_zone` /
+    `signer.build_nsec` install the handlers they need when called.
 22. Hold module-global state visible across `Verifier` instances.
     Multiple `Verifier`s must be independently configurable and
     independently cancellable.
@@ -271,6 +272,7 @@ captures the high-level milestones.
 |---|---|---|
 | v0.4.0 | First tagged release; full per-package refactor (`types/`, `wire/`, `zone/`, `dnssec/`, `resolver/`, `verifier/`); chain validator; auth resolver; NSEC/NSEC3 negative proofs; CNAME/DNAME chasing; wildcard synthesis; pluggable `Cache` | UP-001..006, UP-008 |
 | v0.6.0 | Resolver layer surfaces structured `ResolverResponse` (`records` + `ad` + `rcode`). RCODE classification moves into `verifier/chain.ts:load_records`; NXDOMAIN handled as "no records present" | UP-009 |
+| v0.7.0 | RFC 3597 unknown types; strict zone reader and canonical output; zone signer (`signer`); in-memory authority (`memory`) with byte-identical shared vectors; `Result.answer`; RRSIG digest order and validity window fixed (UF-005 / UF-006); `Verifier` exported from the entry point | UP-010..015 |
 
 Coordinated with mailsec-probe Phase 3.0 (target: mailsec-probe v0.1.0
 → v0.3.0).
