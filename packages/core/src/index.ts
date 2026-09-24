@@ -43,7 +43,17 @@ export * from './dnssec/root_anchors';
 // The zone signer (dnsdata-go `dnssec/signer`, UP-013) as a namespace,
 // mirroring the Go package: signer.sign_zone, signer.Key, ...
 export * as signer from './dnssec/signer';
+export * from './resolver/response';
 export * from './resolver/doh';
+export * from './resolver/auth';
+// The chain validator: the contract of DESIGN.md §3 / §4. The walker's
+// internal helpers stay behind the verifier/ barrel.
+export * from './verifier/verdict';
+export * from './verifier/result';
+export * from './verifier/resolver';
+export * from './verifier/cache';
+export * from './verifier/errors';
+export { Verifier, VerifierOptions } from './verifier/verifier';
 // The in-memory authority (dnsdata-go `resolver/memory`, UP-014) as a
 // namespace, mirroring the Go package: memory.new_authority,
 // memory.with_zone, memory.Authority, ...

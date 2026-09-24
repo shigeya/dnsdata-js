@@ -4,10 +4,16 @@
 // the root's KSK the verifier's trust anchor. Nothing touches the
 // network or the real root.
 
-import { memory, registerAllHandlers, signer, RRTypeName, Zone } from '../../../src/index';
-import { AlgoECDSAP256SHA256 } from '../../../src/types/algorithm';
-import { StringToRRType } from '../../../src/types/dns_type_table';
-import { Verifier } from '../../../src/verifier/verifier';
+import {
+    AlgoECDSAP256SHA256,
+    memory,
+    registerAllHandlers,
+    RRTypeName,
+    signer,
+    StringToRRType,
+    Verifier,
+    Zone,
+} from '../../../src/index';
 
 describe('memory authority example: validation under a private root', () => {
     it('validates a positive answer, NODATA and NXDOMAIN', async () => {

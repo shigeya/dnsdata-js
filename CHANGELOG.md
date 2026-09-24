@@ -16,6 +16,12 @@ version?" question answerable at a glance.
 
 ### Added
 
+- The package entry point now exports the chain validator:
+  `Verifier`, `VerifierOptions`, `Verdict`, `Result` and its types,
+  `Resolver`, `Cache` / `MemoryCache`, the `Verifier*Error` classes,
+  `ResolverResponse`, and the auth client (`AuthClient` and its
+  errors). Earlier releases documented `import { Verifier } from
+  '@dnsdata/core'` but did not export it.
 - RFC 3597 unknown types (port of dnsdata-go UP-010). `StringToRRType` /
   `StringToRRClass` accept `TYPE<n>` / `CLASS<n>` (case-insensitive);
   new `RRTypeName` / `RRClassName` never throw. New
