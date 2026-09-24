@@ -21,6 +21,24 @@ export class DNSZoneRDataFormatError extends DNSZoneException {
     }
 };
 
+// A master-file line that Zone.read_string_strict rejected. `line` is
+// the 1-based number of the first physical line of the record (a
+// parenthesised record may span several); `cause` is the underlying
+// DNSZonePresentationFormatError or DNSZoneRDataFormatError, which tells
+// the two categories apart. Mirrors dnsdata-go `zone.ParseError`.
+export class DNSZoneParseError extends DNSZonePresentationFormatError {
+    public readonly line: number;
+    public readonly text: string;
+    public readonly cause: DNSZonePresentationFormatError | DNSZoneRDataFormatError;
+    public constructor(line: number, text: string,
+                       cause: DNSZonePresentationFormatError | DNSZoneRDataFormatError) {
+        super(`zone line ${line}: ${cause.message}`);
+        this.line = line;
+        this.text = text;
+        this.cause = cause;
+    }
+};
+
 // Wire format errors (RFC 1035 §2.3.4 / §4.1.4): label or name overflow,
 // invalid length octets, and truncated input.
 export class DNSWireError extends CustomError {

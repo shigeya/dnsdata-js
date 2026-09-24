@@ -14,6 +14,8 @@ import {
     split_character_strings,
     tlsa_presentation,
 } from './generic';
+import { parse_zone_strict } from './strict';
+import { sort_canonical } from './canonical';
 
 // Type aliases
 export type ns_type = number;
@@ -22,6 +24,9 @@ export type ns_class = number;
 const TYPE_TXT    = 16;
 const TYPE_TLSA   = 52;
 const TYPE_SMIMEA = 53;
+
+// Octets of RDLENGTH in front of the RDATA written by get_wire_body.
+const RDLENGTH_OCTETS = 2;
 
 // Handler registry for extensible RR type handling (used by dnssec_rr.ts)
 type HandlerFactory = (rr: ResourceRecord, value: string) => ResourceRecordHandler;
@@ -416,6 +421,19 @@ export function new_resource_record_from_rdata(label: string, ttl: number, rrcla
     return new ResourceRecord(label, ttl, rrclass, type, format_generic_rdata(rdata));
 }
 
+// canonical_rdata returns the RDATA octets of rr (without RDLENGTH), as
+// records_canonical sorts them.
+function canonical_rdata(rr: ResourceRecord): Uint8Array {
+    const builder = new WireBuilder();
+    try {
+        rr.get_wire_body(builder);
+    } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        throw new DNSZoneRDataFormatError(`${rr.to_string()}: ${reason}`);
+    }
+    return builder.build().subarray(RDLENGTH_OCTETS);
+}
+
 // Zone: collection of resource records with zone file parsing
 export class Zone {
     protected records: Map<string, ResourceRecord[]> = new Map();
@@ -569,6 +587,55 @@ export class Zone {
             }
         }
         return true;
+    }
+
+    // read_string_strict parses RFC 1035 master-file text like
+    // read_string but rejects, instead of skipping, anything it cannot
+    // turn into a record: unknown types or classes, relative owners
+    // without `$ORIGIN`, records without a TTL, malformed RDATA (including
+    // RFC 3597 generic RDATA whose length does not match), types with no
+    // encoder, and unsupported directives such as `$INCLUDE`.
+    //
+    // Every record is encoded once as a check, so a value that would
+    // otherwise encode to nothing is caught here. The zone is only
+    // modified when the whole text parses; on error it is left untouched
+    // and DNSZoneParseError is thrown.
+    //
+    // Differences from read_string: `;` inside a quoted string is data,
+    // the class may be any mnemonic or `CLASS<n>`, and TTL and class may
+    // appear in either order. Domain names inside RDATA are not qualified
+    // with `$ORIGIN`; write them fully qualified.
+    read_string_strict(text: string): void {
+        const parsed = parse_zone_strict(text,
+            (p) => new ResourceRecord(p.label, p.ttl, p.rrclass, p.type, p.value));
+        for (const rr of parsed) {
+            this.add_rr(rr);
+        }
+    }
+
+    // records_canonical returns every record of the zone in RFC 4034 §6
+    // canonical order: owner name (§6.1), then type, then class, then the
+    // canonical (wire) RDATA (§6.3). Exact duplicates (same owner, type,
+    // class and RDATA octets) appear once. The order does not depend on
+    // insertion order, so the output can be fixed in test vectors.
+    //
+    // Throws DNSZoneRDataFormatError if any record fails to encode; its
+    // RDATA order would otherwise be undefined.
+    records_canonical(): ResourceRecord[] {
+        const entries = this.all_records().map((rr) => ({
+            label: rr.label, type: rr.type, rrclass: rr.rrclass, rdata: canonical_rdata(rr), rr,
+        }));
+        return sort_canonical(entries).map((e) => e.rr);
+    }
+
+    // print_canonical is print in the order of records_canonical: one
+    // record per line in presentation form, filtered to only_type when it
+    // is given and non-zero (0 means every type, as in dnsdata-go).
+    print_canonical(only_type?: ns_type): string {
+        return this.records_canonical()
+            .filter((rr) => !only_type || rr.type === only_type)
+            .map((rr) => rr.to_string())
+            .join('\n');
     }
 
     print(type?: ns_type): string {

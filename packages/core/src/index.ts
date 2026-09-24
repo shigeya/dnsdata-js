@@ -35,6 +35,7 @@ export * from './wire/dns_wire_util';
 export { format_generic_rdata } from './wire/rdata_decoder';
 export * from './zone/dns_zone';
 export { parse_generic_rdata } from './zone/generic';
+export { compare_canonical_names } from './zone/canonical';
 export * from './dnssec/dnssec_key_loader';
 export * from './dnssec/dnssec_rr';
 export * from './dnssec/dnssec_zone';

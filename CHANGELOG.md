@@ -25,6 +25,17 @@ version?" question answerable at a glance.
   alias).
 - `tests/testdata/rdata_roundtrip.json`: RDATA round-trip vectors
   shared byte for byte with dnsdata-go.
+- `Zone.read_string_strict` and `DNSZoneParseError` (port of dnsdata-go
+  UP-011): a master-file reader that rejects, with a line number, what
+  `read_string` skips (unknown types or classes, relative owners without
+  `$ORIGIN`, missing TTL, malformed or length-mismatched RDATA, types
+  with no encoder, unsupported directives). The zone is left untouched
+  on error; `read_string` is unchanged.
+- `Zone.records_canonical`, `Zone.print_canonical` and
+  `compare_canonical_names` (port of dnsdata-go UP-012): RFC 4034 §6
+  canonical order (owner, type, class, RDATA octets) with exact
+  duplicates removed. The DNSSEC helper of the same name now delegates
+  to it with identical results; `print` is unchanged.
 
 ### Fixed
 

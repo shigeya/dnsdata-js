@@ -59,6 +59,8 @@ mechanical:
 | `wire/message.go`                         | `dns_message.ts`                     | `parse_message`, `Header`, `Question`, `RawRR`, `RawMessage` |
 | `wire/rdata.go`                           | `rdata_decoder.ts`                   | `rdata_to_string`, RFC 3597 fallback |
 | `zone/rr.go`, `zone/zone.go`              | `dns_zone.ts`                        | `ResourceRecord`, `Zone`, handler registry |
+| `zone/strict.go`                          | `zone/strict.ts`                     | Strict master-file reader behind `Zone.read_string_strict` (UP-011) |
+| `zone/canonical.go`                       | `zone/canonical.ts`                  | `compare_canonical_names`, canonical sort behind `Zone.records_canonical` (UP-012) |
 | `dnssec/zone.go`                          | `dnssec_zone.ts`                     | `DNSSecZone`, chain-of-trust verification helpers, canonical digest target |
 | `dnssec/{dnskey,rrsig,ds,nsec,nsec3}.go`  | `dnssec_rr.ts`                       | `DNSKey`, `RRSig`, `DNSRR_DS`, `DNSRR_NSEC`, `DNSRR_NSEC3` |
 | `verifier/`                               | `verifier.ts`                        | Chain-of-trust walker with pluggable `Resolver` |

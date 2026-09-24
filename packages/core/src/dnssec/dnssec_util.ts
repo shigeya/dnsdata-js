@@ -10,6 +10,8 @@
 // dot up to implementations, so we strip it as decoration: "com." and
 // "com" compare equal, and both "" and "." represent the root.
 
+import { compare_canonical_names as zone_compare_canonical_names } from '../zone/canonical';
+
 // CompareCanonicalNames returns -1 / 0 / 1 when a sorts before, equal
 // to, or after b in canonical-name order.
 //
@@ -23,20 +25,11 @@
 //   z.example     < \001.z.example
 //   \001.z.example < *.z.example
 //   *.z.example   < \200.z.example
+//
+// It delegates to the zone module's compare_canonical_names, which
+// Zone.records_canonical also uses (mirrors dnsdata-go UP-012).
 export function compare_canonical_names(a: string, b: string): number {
-    const la = canon_labels(a);
-    const lb = canon_labels(b);
-
-    // Compare right-to-left (the rightmost label is most significant).
-    for (let i = 0; i < la.length && i < lb.length; i++) {
-        const ai = la[la.length - 1 - i];
-        const bi = lb[lb.length - 1 - i];
-        if (ai < bi) return -1;
-        if (ai > bi) return 1;
-    }
-    if (la.length < lb.length) return -1;
-    if (la.length > lb.length) return 1;
-    return 0;
+    return zone_compare_canonical_names(a, b);
 }
 
 // equal_canonical_names is the allocation-free fast path for the
