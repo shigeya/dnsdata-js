@@ -9,6 +9,7 @@ import { ResourceRecord } from '../zone/dns_zone';
 import { DNSSecZone, KeyVerifyMode } from '../dnssec/dnssec_zone';
 import { DNSKey, DNSRR_DS } from '../dnssec/dnssec_rr';
 import { StringToRRType } from '../types/dns_type_table';
+import { equal_canonical_names } from '../dnssec/dnssec_util';
 import { Verdict, MAX_ALIAS_HOPS, combine_verdicts } from './verdict';
 import { Result, ZoneStep, HopOutcome } from './result';
 import {
@@ -269,10 +270,16 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
     // the same name even when the question asked for, say, A.
     // The Validate outer loop will start a fresh chain walk for the
     // rewritten target on the next hop.
-    const cname = try_cname(currentZone, currentName, qname);
-    if (cname) return cname;
+    //
+    // DNAME goes first: a DNAME answer also carries the CNAME
+    // synthesised from it, and that CNAME has no RRSIG of its own
+    // (RFC 6672 §5.3.1), so trying CNAME first would report the signed
+    // DNAME as Bogus. The target is derived from the DNAME; the
+    // synthesised CNAME is not used.
     const dname = try_dname(currentZone, currentName, qname);
     if (dname) return dname;
+    const cname = try_cname(currentZone, currentName, qname);
+    if (cname) return cname;
 
     // No alias — fall back to negative-existence proofs.
     const noData = prove_no_data(currentZone, qname, qtype);
@@ -309,7 +316,7 @@ async function load_records(
     if (v.cache) {
         const cached = v.cache.get(name, qtype);
         if (cached !== undefined) {
-            return apply_records(cached, z, qtype, result);
+            return apply_records(cached, z, name, qtype, result);
         }
     }
 
@@ -341,14 +348,19 @@ async function load_records(
 
     const records = resp.records;
     if (v.cache) v.cache.put(name, qtype, records);
-    return apply_records(records, z, qtype, result);
+    return apply_records(records, z, name, qtype, result);
 }
 
 // Appends each record to z, updates result.evidence for the
-// DNSSEC-bookkeeping types, and returns the count of records
-// matching qtype. Shared by the resolver-miss and cache-hit paths
+// DNSSEC-bookkeeping types, and returns the count of records of type
+// qtype owned by name. Shared by the resolver-miss and cache-hit paths
 // so the two produce indistinguishable bookkeeping.
-function apply_records(records: ResourceRecord[], z: DNSSecZone, qtype: number, result: Result): number {
+//
+// The owner check matters for recursive resolvers: they follow a
+// CNAME or DNAME themselves and put the target's rrset (same type,
+// different owner) into the same answer. Counting those would make
+// the caller look for a qname rrset that is not there.
+function apply_records(records: ResourceRecord[], z: DNSSecZone, name: string, qtype: number, result: Result): number {
     let matching = 0;
     for (const rr of records) {
         z.add_rr(rr);
@@ -360,7 +372,7 @@ function apply_records(records: ResourceRecord[], z: DNSSecZone, qtype: number, 
             const key = `${rr.label}/${qtype_mnemonic(qtype)}`;
             push_evidence(result.evidence.rrsigs, key, rr.value);
         }
-        if (rr.type === qtype) matching++;
+        if (rr.type === qtype && equal_canonical_names(rr.label, name)) matching++;
     }
     return matching;
 }

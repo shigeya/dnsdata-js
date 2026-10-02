@@ -14,6 +14,20 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Fixed
+
+- DNAME answers validate. The leaf step tried CNAME before DNAME, and
+  the CNAME synthesised from a DNAME has no RRSIG (RFC 6672 §5.3.1), so
+  every name below a DNAME was Bogus (dnsdata-go UF-007).
+- Alias answers from recursive resolvers validate. The leaf step
+  counted records of the asked type regardless of owner, so the alias
+  target's RRset in the same answer made the walker verify a qname
+  RRset that was not there (UF-007).
+- Wildcard NODATA and empty non-terminal NODATA are `secure-nodata`,
+  no longer `secure-nxdomain`; an NSEC matching the wildcard is no
+  longer taken as its denial. NSEC3 wildcard NODATA (RFC 5155 §8.7) is
+  `secure-nodata` instead of `indeterminate` (UF-007).
+
 ## [0.7.0] — 2026-09-24
 
 Coordinated release with dnsdata-go v0.7.0 (port-back of UP-010..015

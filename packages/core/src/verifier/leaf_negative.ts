@@ -17,65 +17,75 @@ import { qtype_mnemonic, normalize_qname } from './verifier';
 const TYPE_NSEC  = StringToRRType('NSEC');
 const TYPE_NSEC3 = StringToRRType('NSEC3');
 
+// prove_no_data_with_nsec accepts three NODATA shapes: a matching NSEC
+// without qtype; an empty non-terminal (a covering NSEC whose next name
+// is below qname); and wildcard NODATA (RFC 4035 §3.1.3.4: qname is
+// covered, and the NSEC matching *.<closest encloser> lacks qtype).
 export function prove_no_data_with_nsec(z: DNSSecZone, qname: string, qtype: number): string | null {
-    for (const c of nsec_candidates(z)) {
-        if (!c.nsec.matches_name(c.owner, qname)) continue;
-        if (!c.nsec.proves_no_data(qtype)) continue;
-        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
-        return `NSEC at ${c.owner} asserts qname exists without ${qtype_mnemonic(qtype)}`;
+    const cands = nsec_candidates(z);
+    const match = find_nsec(z, cands, c => c.nsec.matches_name(c.owner, qname) && c.nsec.proves_no_data(qtype));
+    if (match) {
+        return `NSEC at ${match.owner} asserts qname exists without ${qtype_mnemonic(qtype)}`;
     }
-    return null;
+
+    const covering = find_nsec(z, cands, c => c.nsec.covers_name(c.owner, qname));
+    if (!covering) return null;
+    if (is_strict_subdomain(covering.nsec.next_domain, qname)) {
+        return `NSEC at ${covering.owner} covers empty non-terminal ${qname} (next name ${covering.nsec.next_domain} is below it)`;
+    }
+
+    const ce = closest_encloser_nsec(qname, covering.owner, covering.nsec.next_domain);
+    if (ce === '') return null;
+    const wildcard = wildcard_at(ce);
+    const wc = find_nsec(z, cands, c => c.nsec.matches_name(c.owner, wildcard) && c.nsec.proves_no_data(qtype));
+    if (!wc) return null;
+    return `NSEC at ${covering.owner} covers ${qname}, NSEC at ${wc.owner} asserts wildcard ${wildcard} exists without ${qtype_mnemonic(qtype)}`;
 }
 
+// prove_no_data_with_nsec3 accepts a matching NSEC3 without qtype (an
+// empty non-terminal has its own NSEC3, so this covers it too) and
+// wildcard NODATA (RFC 5155 §8.7: closest-encloser proof plus an NSEC3
+// matching *.<ce> without qtype).
 export function prove_no_data_with_nsec3(z: DNSSecZone, qname: string, qtype: number): string | null {
-    for (const c of nsec3_candidates(z)) {
-        let target: Uint8Array;
-        try {
-            target = DNSRR_NSEC3.compute_hash(qname, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
-        } catch { continue; }
-        if (!bytes_equal(target, c.ownerHash)) continue;
-        if (!c.nsec3.proves_no_data(qtype)) continue;
-        if (!z.verify_rrset(c.owner, TYPE_NSEC3)) continue;
+    const cands = nsec3_candidates(z);
+    for (const c of cands) {
+        if (!nsec3_matches(z, c, qname) || !c.nsec3.proves_no_data(qtype)) continue;
         return `NSEC3 at ${c.owner} asserts qname exists without ${qtype_mnemonic(qtype)}`;
+    }
+
+    const proof = closest_encloser_proof_nsec3(z, cands, qname);
+    if (!proof) return null;
+    const wildcard = wildcard_at(proof.ce);
+    for (const c of cands) {
+        if (!nsec3_matches(z, c, wildcard) || !c.nsec3.proves_no_data(qtype)) continue;
+        return `${describe_ce_proof(proof)}; NSEC3 at ${c.owner} asserts wildcard ${wildcard} exists without ${qtype_mnemonic(qtype)}`;
     }
     return null;
 }
 
 // prove_nx_domain_with_nsec needs a covering NSEC for qname AND a
-// covering (or matching) NSEC for *.<closestEncloser>. The closest
-// encloser is derived from the covering NSEC and qname: the longest
-// ancestor of qname that is also an ancestor of the NSEC's owner or
-// next_domain.
+// covering NSEC for *.<closestEncloser>. The closest encloser is
+// derived from the covering NSEC and qname: the longest ancestor of
+// qname that is also an ancestor of the NSEC's owner or next_domain.
+//
+// A covering NSEC whose next name is below qname proves qname is an
+// empty non-terminal, and an NSEC matching the wildcard proves the
+// wildcard exists; neither is NXDOMAIN.
 export function prove_nx_domain_with_nsec(z: DNSSecZone, qname: string): string | null {
     const cands = nsec_candidates(z);
 
-    // 1. Find any NSEC that covers qname and verifies under z's keys.
-    let covering: NsecCandidate | null = null;
-    for (const c of cands) {
-        if (!c.nsec.covers_name(c.owner, qname)) continue;
-        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
-        covering = c;
-        break;
-    }
-    if (!covering) return null;
+    const covering = find_nsec(z, cands, c => c.nsec.covers_name(c.owner, qname));
+    if (!covering || is_strict_subdomain(covering.nsec.next_domain, qname)) return null;
 
-    // 2. Compute the closest-encloser candidate: longest common
-    //    ancestor of qname and one of the covering NSEC's range
-    //    endpoints. Both endpoints exist as zone names, so any common
-    //    ancestor with qname must also exist in the zone.
+    // Both endpoints of the covering NSEC exist as zone names, so any
+    // common ancestor with qname must also exist in the zone.
     const ce = closest_encloser_nsec(qname, covering.owner, covering.nsec.next_domain);
-    if (ce === '') return null;
-    const wildcard = '*.' + ce;
+    if (ce === '' || equal_canonical_names(ce, qname)) return null;
+    const wildcard = wildcard_at(ce);
 
-    // 3. Find an NSEC that either covers or matches *.<ce>. The match
-    //    case is acceptable because the wildcard's own bitmap would
-    //    still witness "no qname" via the covering NSEC found above.
-    for (const c of cands) {
-        if (!c.nsec.covers_name(c.owner, wildcard) && !c.nsec.matches_name(c.owner, wildcard)) continue;
-        if (!z.verify_rrset(c.owner, TYPE_NSEC)) continue;
-        return `NSEC at ${covering.owner} covers ${qname}, NSEC at ${c.owner} denies wildcard ${wildcard}`;
-    }
-    return null;
+    const denial = find_nsec(z, cands, c => c.nsec.covers_name(c.owner, wildcard));
+    if (!denial) return null;
+    return `NSEC at ${covering.owner} covers ${qname}, NSEC at ${denial.owner} denies wildcard ${wildcard}`;
 }
 
 // prove_nx_domain_with_nsec3 implements the three-NSEC3 closest-
@@ -83,46 +93,75 @@ export function prove_nx_domain_with_nsec(z: DNSSecZone, qname: string): string 
 // cover, and wildcard cover.
 export function prove_nx_domain_with_nsec3(z: DNSSecZone, qname: string): string | null {
     const cands = nsec3_candidates(z);
-    if (cands.length === 0) return null;
-
-    // Walk ancestors of qname from longest to shortest. The first
-    // ancestor whose hash matches some NSEC3's owner-hash is the
-    // closest encloser.
-    const ancestors = ancestors_of(qname);
-    let ce = '';
-    let ceOwner = '';
-    for (const a of ancestors) {
-        for (const c of cands) {
-            let target: Uint8Array;
-            try {
-                target = DNSRR_NSEC3.compute_hash(a, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
-            } catch { continue; }
-            if (!bytes_equal(target, c.ownerHash)) continue;
-            if (!z.verify_rrset(c.owner, TYPE_NSEC3)) continue;
-            ce = a;
-            ceOwner = c.owner;
-            break;
-        }
-        if (ce !== '') break;
-    }
-    if (ce === '' || equal_canonical_names(ce, qname)) {
-        // qname itself matches → NODATA shape, not NXDOMAIN. Or no
-        // ancestor matched at all.
-        return null;
-    }
-
-    // next-closer name: ce with one more label from qname prepended.
-    const nc = next_closer_name(qname, ce);
-    if (nc === '') return null;
-    const ncOwner = find_covering_nsec3(z, cands, nc);
-    if (ncOwner === '') return null;
+    const proof = closest_encloser_proof_nsec3(z, cands, qname);
+    if (!proof) return null;
 
     // wildcard: "*." + ce, must be covered by some NSEC3.
-    const wildcard = '*.' + ce;
+    const wildcard = wildcard_at(proof.ce);
     const wcOwner = find_covering_nsec3(z, cands, wildcard);
     if (wcOwner === '') return null;
+    return `${describe_ce_proof(proof)}; ${wcOwner} covers wildcard ${wildcard}`;
+}
 
-    return `NSEC3 at ${ceOwner} matches closest encloser ${ce}; ${ncOwner} covers next-closer ${nc}; ${wcOwner} covers wildcard ${wildcard}`;
+// find_nsec returns the first candidate that satisfies pred and whose
+// signature verifies under z's keys, or null.
+function find_nsec(z: DNSSecZone, cands: NsecCandidate[], pred: (c: NsecCandidate) => boolean): NsecCandidate | null {
+    for (const c of cands) {
+        if (pred(c) && z.verify_rrset(c.owner, TYPE_NSEC)) return c;
+    }
+    return null;
+}
+
+// Nsec3CEProof is a verified RFC 5155 §8.3 closest-encloser proof.
+interface Nsec3CEProof {
+    ce: string;       // closest encloser
+    ceOwner: string;  // the NSEC3 matching it
+    nc: string;       // next closer name
+    ncOwner: string;  // the NSEC3 covering it
+}
+
+function describe_ce_proof(p: Nsec3CEProof): string {
+    return `NSEC3 at ${p.ceOwner} matches closest encloser ${p.ce}; ${p.ncOwner} covers next-closer ${p.nc}`;
+}
+
+// closest_encloser_proof_nsec3 finds the closest encloser of qname (the
+// longest proper ancestor with a matching NSEC3) and an NSEC3 covering
+// the next closer name. Returns null when qname itself matches (not a
+// non-existence case) or either half of the proof is missing.
+function closest_encloser_proof_nsec3(z: DNSSecZone, cands: Nsec3Candidate[], qname: string): Nsec3CEProof | null {
+    for (const a of ancestors_of(qname)) {
+        const match = cands.find(c => nsec3_matches(z, c, a));
+        if (!match) continue;
+        if (equal_canonical_names(a, qname)) return null;
+        const nc = next_closer_name(qname, a);
+        if (nc === '') return null;
+        const ncOwner = find_covering_nsec3(z, cands, nc);
+        if (ncOwner === '') return null;
+        return { ce: a, ceOwner: match.owner, nc, ncOwner };
+    }
+    return null;
+}
+
+// nsec3_matches reports whether c's owner hash equals H(name) under c's
+// own parameters and c verifies under z's keys.
+function nsec3_matches(z: DNSSecZone, c: Nsec3Candidate, name: string): boolean {
+    let h: Uint8Array;
+    try {
+        h = DNSRR_NSEC3.compute_hash(name, c.nsec3.hash_algorithm, c.nsec3.iterations, c.nsec3.salt);
+    } catch { return false; }
+    return bytes_equal(h, c.ownerHash) && z.verify_rrset(c.owner, TYPE_NSEC3);
+}
+
+// wildcard_at returns the wildcard name directly below ce.
+function wildcard_at(ce: string): string {
+    return ce === '.' ? '*.' : '*.' + ce;
+}
+
+// is_strict_subdomain reports whether name is below (not equal to)
+// parent.
+function is_strict_subdomain(name: string, parent: string): boolean {
+    if (canon_labels_trim(name).length <= canon_labels_trim(parent).length) return false;
+    return equal_canonical_names(longest_common_ancestor(name, parent), parent);
 }
 
 export function find_covering_nsec3(z: DNSSecZone, cands: Nsec3Candidate[], target: string): string {
@@ -204,8 +243,10 @@ export function canon_labels_trim(name: string): string[] {
     return cleaned.split('.');
 }
 
-// prove_no_data attempts to prove from z that qname exists but no
-// rrset of qtype is present (RFC 4035 §5.4 / RFC 5155 §8.5).
+// prove_no_data attempts to prove from z that no rrset of qtype is
+// present at qname although the answer is not NXDOMAIN: qname exists
+// without qtype (RFC 4035 §5.4, RFC 5155 §8.5), qname is an empty
+// non-terminal, or wildcard NODATA (RFC 4035 §3.1.3.4, RFC 5155 §8.7).
 export function prove_no_data(z: DNSSecZone, qname: string, qtype: number): string | null {
     const nsec = prove_no_data_with_nsec(z, qname, qtype);
     if (nsec) return nsec;

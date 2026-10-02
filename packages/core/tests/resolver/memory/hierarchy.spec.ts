@@ -25,6 +25,8 @@ describe('memory authority: private-root hierarchy verdicts', () => {
         ['name does not exist', 'nope.example.test.', T('A'), Verdict.SecureNXDomain],
         ['type does not exist', 'www.example.test.', T('MX'), Verdict.SecureNoData],
         ['wildcard expansion', 'x.wild.example.test.', T('A'), Verdict.Secure],
+        ['wildcard without the type', 'x.wild.example.test.', T('TXT'), Verdict.SecureNoData],
+        ['empty non-terminal', 'wild.example.test.', T('A'), Verdict.SecureNoData],
         ['CNAME followed', 'alias.example.test.', T('A'), Verdict.Secure],
         ['unsigned delegation', 'www.insecure.test.', T('A'), Verdict.Insecure],
     ] as const)('%s', async (_name, qname, qtype, want) => {
