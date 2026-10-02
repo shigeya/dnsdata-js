@@ -87,13 +87,16 @@ describe('memory authority: answers', () => {
 });
 
 describe('memory authority: DNAME', () => {
-    it('answers a name below a DNAME with the DNAME', async () => {
+    it('answers a name below a DNAME with the DNAME and the CNAME synthesised from it', async () => {
         const z = readZone('example.test. 3600 SOA ns1.example.test. h.example.test. 1 2 3 4 5\n' +
             'old.example.test. 3600 DNAME new.example.test.\n');
         const a = new_authority(with_zone('example.test.', z));
         const resp = await a.query('www.old.example.test.', T('A'));
         expect(resp.rcode).toBe(0);
-        expect(resp.records.map((rr) => [rr.label, rr.type])).toEqual([['old.example.test.', T('DNAME')]]);
+        expect(resp.records.map((rr) => [rr.label, rr.type, rr.value])).toEqual([
+            ['old.example.test.', T('DNAME'), 'new.example.test.'],
+            ['www.old.example.test.', T('CNAME'), 'www.new.example.test.'],
+        ]);
     });
 });
 

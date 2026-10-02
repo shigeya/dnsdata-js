@@ -162,19 +162,12 @@ function dname_at_apex(c: TwoBranchChain): ResourceRecord[] {
 
 //////////////////////////////////////////////////////////// aliases
 
+// The authoritative shape (the DNAME plus the unsigned CNAME synthesised
+// from it, RFC 6672 §5.3.1) is validated end to end against the
+// in-memory authority in tests/resolver/memory/alias.spec.ts.
 describe('Verifier alias answer shapes', () => {
-    it('validates a DNAME answer that carries the synthesised CNAME', async () => {
-        const c = new TwoBranchChain();
-        const answer = dname_at_apex(c);
-        c.resolver.set('www.example.com.', T('TXT'), answer);
-        c.resolver.set('www.example.com.', T('DS'), answer);
-        c.resolver.set('www.example.net.', T('TXT'), with_sigs(c.dst.zone, 'www.example.net.', T('TXT')));
-
-        // from is the DNAME owner, not the queried name.
-        expect_secure_alias(await c.validate('www.example.com.', T('TXT')), 'dname', 'example.com.', 'www.example.net.', T('TXT'));
-    });
-
     it('validates a DNAME answer from a recursive resolver (target RRset included)', async () => {
+        // from is the DNAME owner, not the queried name.
         const c = new TwoBranchChain();
         const answer = dname_at_apex(c);
         const target = with_sigs(c.dst.zone, 'www.example.net.', T('TXT'));

@@ -3,7 +3,7 @@
 
 import { ResourceRecord } from '../../zone/dns_zone';
 import { ResolverResponse } from '../response';
-import { next_closer, wildcard_of } from './names';
+import { labels, next_closer, normalize, wildcard_of } from './names';
 import { TYPE_CNAME, TYPE_DNAME, TYPE_DS, TYPE_NS, TYPE_NSEC, ZoneIndex } from './zone_index';
 
 export const RCODE_NOERROR = 0;
@@ -26,9 +26,22 @@ export function answer(idx: ZoneIndex, name: string, qtype: number): ResolverRes
     }
     const dname = idx.dname_above(name);
     if (dname !== null) {
-        return response(RCODE_NOERROR, idx.with_sigs(dname, TYPE_DNAME));
+        return dname_answer(idx, name, dname);
     }
     return missing(idx, name, qtype);
+}
+
+// dname_answer answers a name below the DNAME at owner: the signed DNAME
+// and the CNAME synthesised from it (RFC 6672 §5.3.1), owned by name,
+// unsigned, with the DNAME's TTL.
+function dname_answer(idx: ZoneIndex, name: string, owner: string): ResolverResponse {
+    const dname = idx.with_sigs(owner, TYPE_DNAME);
+    const target = normalize(idx.rrset(owner, TYPE_DNAME)[0].value);
+    const prefix = labels(name).slice(0, labels(name).length - labels(owner).length);
+    const synthesised = new ResourceRecord(
+        name, dname[0].ttl, dname[0].rrclass, TYPE_CNAME, [...prefix, ...labels(target)].join('.') + '.',
+    );
+    return response(RCODE_NOERROR, [...dname, synthesised]);
 }
 
 // referral answers a name at or below a delegation point: the NS
@@ -53,6 +66,8 @@ function existing(idx: ZoneIndex, name: string, qtype: number): ResolverResponse
 
 // missing answers a name that does not exist: wildcard synthesis when
 // `*.<closest encloser>` exists (RFC 4035 §3.1.3.3), NXDOMAIN otherwise.
+// A wildcard CNAME is synthesised for a query of any type
+// (RFC 4592 §3.3.3).
 function missing(idx: ZoneIndex, name: string, qtype: number): ResolverResponse {
     const ce = idx.closest_encloser(name);
     const wildcard = wildcard_of(ce);
@@ -60,7 +75,10 @@ function missing(idx: ZoneIndex, name: string, qtype: number): ResolverResponse 
         return response(RCODE_NXDOMAIN, [...idx.covering_nsec(name), ...idx.covering_nsec(wildcard)]);
     }
     const proof = idx.covering_nsec(next_closer(name, ce));
-    const rs = idx.with_sigs(wildcard, qtype);
+    let rs = idx.with_sigs(wildcard, qtype);
+    if (rs.length === 0 && qtype !== TYPE_CNAME) {
+        rs = idx.with_sigs(wildcard, TYPE_CNAME);
+    }
     if (rs.length === 0) {
         return response(RCODE_NOERROR, [...proof, ...idx.with_sigs(wildcard, TYPE_NSEC)]);
     }
