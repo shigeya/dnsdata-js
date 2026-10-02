@@ -27,6 +27,10 @@ version?" question answerable at a glance.
   no longer `secure-nxdomain`; an NSEC matching the wildcard is no
   longer taken as its denial. NSEC3 wildcard NODATA (RFC 5155 §8.7) is
   `secure-nodata` instead of `indeterminate` (UF-007).
+- `AliasStep.from` of a DNAME hop is the DNAME owner, as documented,
+  instead of the name queried in that hop. CNAME hops are unchanged
+  (the owner is the queried name). The queried name of a hop is the
+  previous hop's `target`.
 
 ## [0.7.0] — 2026-09-24
 

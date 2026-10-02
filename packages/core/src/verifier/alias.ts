@@ -92,7 +92,7 @@ export function try_dname(currentZone: DNSSecZone, currentName: string, qname: s
             verdict: Verdict.Secure,
             alias: {
                 type:   'dname',
-                from:   qname,
+                from:   anc,
                 target: synth,
                 zone:   currentName,
                 verdict: Verdict.Secure,

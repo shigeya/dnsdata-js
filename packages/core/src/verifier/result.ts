@@ -130,6 +130,9 @@ export interface WildcardInfo {
 // AliasStep records one CNAME or DNAME hop encountered during
 // resolution. Each hop is a signed redirect from `from` (the CNAME or
 // DNAME owner) to `target` (the rewritten qname for the next hop).
+// For a CNAME `from` is the name queried in this hop; for a DNAME it is
+// an ancestor of it. The name queried in a hop is the original qname
+// for the first hop and the previous hop's `target` after that.
 // `zone` names the zone that signed the redirect, and `verdict` is
 // the per-hop classification — useful for callers that want to know
 // which hop introduced the worst-of contribution to the overall

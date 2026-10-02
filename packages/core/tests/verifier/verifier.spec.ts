@@ -652,7 +652,8 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
         expect(result.verdict).toBe(Verdict.Secure);
         expect(result.aliases!.length).toBe(1);
         expect(result.aliases![0].type).toBe('dname');
-        expect(result.aliases![0].from).toBe('x.old.example.');
+        // from is the DNAME owner, not the queried name.
+        expect(result.aliases![0].from).toBe('old.example.');
         expect(result.aliases![0].target).toBe('x.new.example.');
     });
 
