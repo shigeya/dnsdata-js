@@ -20,13 +20,10 @@
 // (./resolver_auth.ts) both pull this file in, so any consumer
 // reaching AuthClient through either entry point sees the method.
 
-import { parse_message, RawRR } from '../../wire/dns_message';
-import { rdata_to_string } from '../../wire/rdata_decoder';
-import { ResourceRecord, ns_class, ns_type } from '../../zone/dns_zone';
-import { RRClassName, RRTypeName } from '../../types/dns_type_table';
+import { to_response } from '../message';
 import { ResolverResponse } from '../response';
 import { AuthClient } from './client';
-import { AuthResponseError, error_message } from './errors';
+import { AuthResponseError } from './errors';
 
 declare module './client' {
     interface AuthClient {
@@ -61,34 +58,5 @@ AuthClient.prototype.resolve = async function resolve(
     signal?: AbortSignal,
 ): Promise<ResolverResponse> {
     const raw = await this.query(name, qtype, { signal });
-    let msg;
-    try {
-        msg = parse_message(raw);
-    } catch (err) {
-        throw new AuthResponseError(`parse: ${error_message(err)}`);
-    }
-    const records: ResourceRecord[] = [];
-    for (const rr of msg.answer) records.push(raw_to_record(msg.raw, rr));
-    for (const rr of msg.authority) records.push(raw_to_record(msg.raw, rr));
-    return {
-        records,
-        ad: msg.header.ad(),
-        rcode: msg.header.rcode(),
-    };
+    return to_response(raw, (step, message) => new AuthResponseError(`${step}: ${message}`));
 };
-
-function raw_to_record(raw: Uint8Array, rr: RawRR): ResourceRecord {
-    let value: string;
-    try {
-        value = rdata_to_string(raw, rr.type, rr.rdata, rr.rdataStart);
-    } catch (err) {
-        throw new AuthResponseError(`rdata decode: ${error_message(err)}`);
-    }
-    try {
-        const type_name = RRTypeName(rr.type as ns_type);
-        const class_name = RRClassName(rr.class as ns_class);
-        return new ResourceRecord(rr.name, rr.ttl, class_name, type_name, value);
-    } catch (err) {
-        throw new AuthResponseError(`construct record: ${error_message(err)}`);
-    }
-}

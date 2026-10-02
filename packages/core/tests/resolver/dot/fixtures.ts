@@ -1,0 +1,25 @@
+// Test-only TLS material for the DoT specs: a self-signed P-256
+// certificate for dot.test and 127.0.0.1, valid until 2126, and its
+// key. Generated with openssl for these tests; it protects nothing.
+
+export const TEST_SERVER_NAME = 'dot.test';
+
+export const TEST_CERT_PEM = `-----BEGIN CERTIFICATE-----
+MIIBjTCCATKgAwIBAgIUQOWqHiJuL971AdLot9UaaGIPvdwwCgYIKoZIzj0EAwIw
+EzERMA8GA1UEAwwIZG90LnRlc3QwIBcNMjYxMDAyMjEzNTE3WhgPMjEyNjA5MDgy
+MTM1MTdaMBMxETAPBgNVBAMMCGRvdC50ZXN0MFkwEwYHKoZIzj0CAQYIKoZIzj0D
+AQcDQgAEgWrsc3rqrC0FbeiuKyV54cy0CZ2kaLLFUU/4A0qii+ADiLXaQRJzv/hy
+c77R/Fr/oM17MgUdBz0ZU5Wa/RiFuKNiMGAwHQYDVR0OBBYEFKnQz2yMag70xVKd
+2HyVu1UK3iZ4MA8GA1UdEwEB/wQFMAMBAf8wGQYDVR0RBBIwEIIIZG90LnRlc3SH
+BH8AAAEwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYIKoZIzj0EAwIDSQAwRgIhAPSR
+d7DPeC8/Pno9N0TKQJ+CI82iZfgtm+ipkknn4TMSAiEAmWyGBLmiTXape4+zBIw0
+5VR/l4FAvLnaKohJGwg+yp0=
+-----END CERTIFICATE-----
+`;
+
+export const TEST_KEY_PEM = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgiu5fGuIRqeW1uDQ3
+0T3lXZiksm1YLfj/Sng2u2nr38+hRANCAASBauxzeuqsLQVt6K4rJXnhzLQJnaRo
+ssVRT/gDSqKL4AOItdpBEnO/+HJzvtH8Wv+gzXsyBR0HPRlTlZr9GIW4
+-----END PRIVATE KEY-----
+`;

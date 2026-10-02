@@ -8,7 +8,7 @@
 //   - UDP is tried first. If the response has the TC (truncation) flag
 //     set, the same query is replayed on TCP per RFC 1035 §4.2.1.
 //   - TCP frames are prefixed with a 2-byte big-endian length per
-//     RFC 1035 §4.2.2.
+//     RFC 1035 §4.2.2 (../stream.ts, shared with the DoT client).
 //   - Per DESIGN.md MUST 9 (carried over from dnsdata-go), the caller
 //     supplies the server list. Nothing is read from /etc/resolv.conf,
 //     no filesystem touches.
@@ -18,13 +18,16 @@
 // one that returns a usable response wins.
 //
 // Node-specific dgram / net socket wrappers (NodeDialer,
-// NodeUdpConnection, NodeTcpConnection) live in this file by design:
-// REFACTOR_PLAN.md §3 P7 calls out that Go has no equivalent so
-// keeping them as a separate file would not yield a 1:1 mapping.
+// NodeUdpConnection) live in this file by design: REFACTOR_PLAN.md §3
+// P7 calls out that Go has no equivalent so keeping them as a separate
+// file would not yield a 1:1 mapping. The TCP reader is the shared
+// SocketStream of ../stream.ts, which the DoT client also uses.
 
 import * as dgram from 'dgram';
 import * as net from 'net';
 import { build_query_with_options, random_query_id, QueryOptions } from '../../wire/dns_wire';
+import { normalize_host_port, parse_host_port } from '../addr';
+import { SocketStream, StreamErrors, exchange } from '../stream';
 import {
     AuthAbortedError,
     AuthAllServersFailedError,
@@ -35,7 +38,11 @@ import {
     AuthTimeoutError,
     AuthTransportError,
     AuthUDPTruncatedError,
+    error_message,
 } from './errors';
+
+// DNS over UDP / TCP port (RFC 1035 §4.2).
+const AUTH_DEFAULT_PORT = 53;
 
 //////////////////////////////////////////////////////////////////// Dialer
 
@@ -112,7 +119,7 @@ class NodeDialer implements Dialer {
             socket.once('connect', () => {
                 clearTimeout(timer);
                 if (opts.signal) opts.signal.removeEventListener('abort', on_abort);
-                resolve(new NodeTcpConnection(socket, addr, opts));
+                resolve(new SocketStream(socket, addr, opts, TCP_ERRORS));
             });
             socket.once('error', (err: Error) => {
                 clearTimeout(timer);
@@ -204,135 +211,13 @@ class NodeUdpConnection implements UdpConnection {
     }
 }
 
-class NodeTcpConnection implements TcpConnection {
-    private readonly socket: net.Socket;
-    private readonly addr: string;
-    private readonly timeout_ms: number;
-    private readonly signal?: AbortSignal;
-    private readonly chunks: Buffer[] = [];
-    private buffered_len = 0;
-    private pending: { n: number; resolve: (buf: Uint8Array) => void; reject: (err: unknown) => void; timer: NodeJS.Timeout; on_abort?: () => void } | null = null;
-    private fatal: unknown = null;
-    private ended = false;
-    private closed = false;
-
-    constructor(socket: net.Socket, addr: string, opts: DialOptions) {
-        this.socket = socket;
-        this.addr = addr;
-        this.timeout_ms = opts.timeout_ms;
-        this.signal = opts.signal;
-
-        socket.on('data', (data: Buffer) => {
-            this.chunks.push(data);
-            this.buffered_len += data.length;
-            this.try_resolve_pending();
-        });
-        socket.on('end', () => {
-            this.ended = true;
-            this.try_resolve_pending();
-        });
-        socket.on('error', (err: Error) => {
-            this.fatal = new AuthTransportError(`tcp ${this.addr}`, err);
-            this.try_resolve_pending();
-        });
-        socket.on('close', () => {
-            this.ended = true;
-            this.try_resolve_pending();
-        });
-    }
-
-    send(data: Uint8Array): Promise<void> {
-        return new Promise((resolve, reject) => {
-            // Node accepts Uint8Array via Buffer.from without copy on
-            // identical backing ArrayBuffer, but to keep semantics
-            // predictable we copy explicitly.
-            this.socket.write(Buffer.from(data), (err) => {
-                if (err) {
-                    reject(new AuthTransportError(`tcp write ${this.addr}`, err));
-                    return;
-                }
-                resolve();
-            });
-        });
-    }
-
-    recv_exact(n: number): Promise<Uint8Array> {
-        return new Promise((resolve, reject) => {
-            if (this.fatal !== null) {
-                reject(this.fatal);
-                return;
-            }
-            if (this.signal && this.signal.aborted) {
-                reject(new AuthAbortedError());
-                return;
-            }
-            const timer = setTimeout(() => {
-                this.pending = null;
-                reject(new AuthTimeoutError('tcp read', this.addr, this.timeout_ms));
-            }, this.timeout_ms);
-            const on_abort = () => {
-                clearTimeout(timer);
-                this.pending = null;
-                reject(new AuthAbortedError());
-            };
-            if (this.signal) {
-                this.signal.addEventListener('abort', on_abort, { once: true });
-            }
-            this.pending = { n, resolve, reject, timer, on_abort: this.signal ? on_abort : undefined };
-            this.try_resolve_pending();
-        });
-    }
-
-    close(): void {
-        if (this.closed) return;
-        this.closed = true;
-        try {
-            this.socket.destroy();
-        } catch {
-            // already destroyed — ignore.
-        }
-    }
-
-    private try_resolve_pending(): void {
-        const p = this.pending;
-        if (p === null) return;
-        if (this.fatal !== null) {
-            this.pending = null;
-            clearTimeout(p.timer);
-            if (p.on_abort && this.signal) this.signal.removeEventListener('abort', p.on_abort);
-            p.reject(this.fatal);
-            return;
-        }
-        if (this.buffered_len >= p.n) {
-            const out = new Uint8Array(p.n);
-            let written = 0;
-            while (written < p.n) {
-                const head = this.chunks[0];
-                const take = Math.min(head.length, p.n - written);
-                out.set(head.subarray(0, take), written);
-                written += take;
-                if (take === head.length) {
-                    this.chunks.shift();
-                } else {
-                    this.chunks[0] = head.subarray(take);
-                }
-            }
-            this.buffered_len -= p.n;
-            this.pending = null;
-            clearTimeout(p.timer);
-            if (p.on_abort && this.signal) this.signal.removeEventListener('abort', p.on_abort);
-            p.resolve(out);
-            return;
-        }
-        if (this.ended) {
-            this.pending = null;
-            clearTimeout(p.timer);
-            if (p.on_abort && this.signal) this.signal.removeEventListener('abort', p.on_abort);
-            p.reject(new AuthTransportError(`tcp read ${this.addr}`, new Error(`stream ended after ${this.buffered_len} of ${p.n} bytes`)));
-            return;
-        }
-    }
-}
+// TCP_ERRORS makes the shared SocketStream raise this client's errors,
+// with the messages it always had ("tcp read <addr>", ...).
+const TCP_ERRORS: StreamErrors = {
+    transport: (message, cause) => new AuthTransportError(`tcp ${message}`, cause),
+    timeout: (operation, addr, timeout_ms) => new AuthTimeoutError(`tcp ${operation}`, addr, timeout_ms),
+    aborted: () => new AuthAbortedError(),
+};
 
 //////////////////////////////////////////////////////////////////// Client
 
@@ -465,16 +350,7 @@ export class AuthClient {
     private async _query_tcp(addr: string, query_id: number, query: Uint8Array, signal?: AbortSignal): Promise<Uint8Array> {
         const conn = await this._dialer.dial_tcp(addr, { timeout_ms: this._timeout_ms, signal });
         try {
-            // 2-byte big-endian length prefix.
-            const prefix = new Uint8Array(2);
-            prefix[0] = (query.length >> 8) & 0xFF;
-            prefix[1] = query.length & 0xFF;
-            await conn.send(prefix);
-            await conn.send(query);
-
-            const hdr = await conn.recv_exact(2);
-            const resp_len = (hdr[0] << 8) | hdr[1];
-            const resp = await conn.recv_exact(resp_len);
+            const resp = await exchange(conn, query);
             validate_response(resp, query_id);
             return resp;
         } finally {
@@ -498,62 +374,17 @@ function validate_response(resp: Uint8Array, query_id: number): void {
 //
 // Ports dnsdata-go `auth.NormalizeAddr`.
 export function normalize_addr(addr: string): string {
-    if (has_port(addr)) return addr;
-    return join_host_port(addr, 53);
+    return normalize_host_port(addr, AUTH_DEFAULT_PORT);
 }
 
-// has_port returns true when addr already carries a port suffix.
-// Mirrors Go's net.SplitHostPort succeed-or-fail outcome for the
-// shapes we accept: "host:port", "[ipv6]:port", "ipv4:port".
-function has_port(addr: string): boolean {
-    if (addr.startsWith('[')) {
-        // "[ipv6]:port" — bracket form. Require closing bracket and ':'.
-        const close = addr.indexOf(']');
-        if (close < 0) return false;
-        return close + 1 < addr.length && addr[close + 1] === ':';
-    }
-    // Bare host:port. If the host contains more than one ':' it's a
-    // bare IPv6 address (e.g. "::1") — that's NOT host:port.
-    const colon = addr.indexOf(':');
-    if (colon < 0) return false;
-    const last = addr.lastIndexOf(':');
-    return colon === last;
-}
-
-function join_host_port(host: string, port: number | string): string {
-    const p = String(port);
-    if (host.includes(':') && !host.startsWith('[')) {
-        return `[${host}]:${p}`;
-    }
-    return `${host}:${p}`;
-}
-
-// parse_addr splits a normalized address into host + port. The
-// returned host is the bare IP / hostname (no IPv6 brackets) — this
-// is what Node's net / dgram APIs expect.
+// parse_addr splits a normalized address into host + port (../addr.ts),
+// as AuthResolverError when it is malformed.
 function parse_addr(addr: string): { host: string; port: number } {
-    if (addr.startsWith('[')) {
-        const close = addr.indexOf(']');
-        if (close < 0 || close + 1 >= addr.length || addr[close + 1] !== ':') {
-            throw new AuthResolverError(`invalid bracketed address: ${addr}`);
-        }
-        const host = addr.slice(1, close);
-        const port = Number(addr.slice(close + 2));
-        if (!Number.isFinite(port) || port < 0 || port > 65535) {
-            throw new AuthResolverError(`invalid port in address: ${addr}`);
-        }
-        return { host, port };
+    try {
+        return parse_host_port(addr);
+    } catch (err) {
+        throw new AuthResolverError(error_message(err));
     }
-    const last = addr.lastIndexOf(':');
-    if (last < 0) {
-        throw new AuthResolverError(`missing port in address: ${addr}`);
-    }
-    const host = addr.slice(0, last);
-    const port = Number(addr.slice(last + 1));
-    if (!Number.isFinite(port) || port < 0 || port > 65535) {
-        throw new AuthResolverError(`invalid port in address: ${addr}`);
-    }
-    return { host, port };
 }
 
 function is_ipv6(host: string): boolean {

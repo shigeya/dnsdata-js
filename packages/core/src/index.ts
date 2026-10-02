@@ -49,6 +49,7 @@ export * as signer from './dnssec/signer';
 export * from './resolver/response';
 export * from './resolver/doh';
 export * from './resolver/auth';
+export * from './resolver/dot';
 // The chain validator: the contract of DESIGN.md §3 / §4. The walker's
 // internal helpers stay behind the verifier/ barrel.
 export * from './verifier/verdict';

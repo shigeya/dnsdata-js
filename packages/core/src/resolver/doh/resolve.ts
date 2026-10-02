@@ -20,10 +20,7 @@
 // The package barrel (../doh/index.ts) re-exports both files so any
 // downstream import that names DoHClient also picks up the method.
 
-import { parse_message, RawRR } from '../../wire/dns_message';
-import { rdata_to_string } from '../../wire/rdata_decoder';
-import { ResourceRecord, ns_class, ns_type } from '../../zone/dns_zone';
-import { RRClassName, RRTypeName } from '../../types/dns_type_table';
+import { to_response } from '../message';
 import { ResolverResponse } from '../response';
 import { DoHClient } from './client';
 import { DoHResponseError } from './errors';
@@ -63,39 +60,7 @@ DoHClient.prototype.resolve = async function resolve(
     signal?: AbortSignal,
 ): Promise<ResolverResponse> {
     const raw = await this.query(name, qtype, { signal });
-    let msg;
-    try {
-        msg = parse_message(raw);
-    } catch (err) {
-        throw new DoHResponseError(error_message(err));
-    }
-    const records: ResourceRecord[] = [];
-    for (const rr of msg.answer) records.push(raw_to_record(msg.raw, rr));
-    for (const rr of msg.authority) records.push(raw_to_record(msg.raw, rr));
-    return {
-        records,
-        ad: msg.header.ad(),
-        rcode: msg.header.rcode(),
-    };
+    // A parse failure carries the parser's message alone, as it always has.
+    return to_response(raw, (step, message) =>
+        new DoHResponseError(step === 'parse' ? message : `${step}: ${message}`));
 };
-
-function raw_to_record(raw: Uint8Array, rr: RawRR): ResourceRecord {
-    let value: string;
-    try {
-        value = rdata_to_string(raw, rr.type, rr.rdata, rr.rdataStart);
-    } catch (err) {
-        throw new DoHResponseError(`rdata decode: ${error_message(err)}`);
-    }
-    try {
-        const type_name = RRTypeName(rr.type as ns_type);
-        const class_name = RRClassName(rr.class as ns_class);
-        return new ResourceRecord(rr.name, rr.ttl, class_name, type_name, value);
-    } catch (err) {
-        throw new DoHResponseError(`construct record: ${error_message(err)}`);
-    }
-}
-
-function error_message(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    return String(err);
-}

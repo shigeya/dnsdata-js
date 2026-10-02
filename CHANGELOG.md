@@ -37,6 +37,14 @@ version?" question answerable at a glance.
   delegation without DS, by the matching NSEC3 or, under opt-out, the
   closest provable encloser proof. Ports dnsdata-go.
 - `base32hex_encode` is exported from `wire/rdata_decoder`.
+- `DoTClient`: a DNS-over-TLS client (RFC 7858) with the shape of the
+  auth and DoH clients — `servers` (port 853 by default), `tls` (`ca`,
+  `servername`), `timeout_ms`, `checking_disabled`; `query`,
+  `query_raw`, and `resolve` returning a `ResolverResponse`. The server
+  is authenticated as in RFC 8310 strict privacy (trusted root,
+  matching name or address, TLS 1.2 or later). One connection per
+  query. Errors are `DoTResolverError` subclasses; `normalize_dot_addr`
+  adds the port. Ports dnsdata-go `resolver/dot`.
 
 ### Changed
 
@@ -61,6 +69,11 @@ version?" question answerable at a glance.
   or non-ASCII, an IPv4-mapped `ipv6hint`, an uppercase target, empty
   TLSA data) is still generic, as is malformed RDATA. Shared vectors
   "SVCB all keys", "SVCB keys out of order" and "TLSA empty data".
+- `AuthClient` writes the TCP length prefix and the query in one write
+  (RFC 7766 §8). Its TCP reader, the length framing, the address
+  helpers and the conversion of a response into a `ResolverResponse`
+  are shared with the DoT client (and the conversion with `DoHClient`);
+  results and error messages are unchanged.
 
 ### Fixed
 
