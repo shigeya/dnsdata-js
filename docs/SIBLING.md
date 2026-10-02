@@ -61,10 +61,12 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `types/`                                  | `types/dns_type_table.ts`, `types/algorithm.ts` | RR-type / class / opcode / rcode / algorithm tables, `TYPE<n>` / `CLASS<n>` (UP-010) |
 | `wire/name.go`                            | `wire/dns_wire.ts` (encode/decode)   | `domain_name2wire`, `wire2domain_name` |
 | `wire/name_decompress.go`                 | `wire/dns_wire.ts` (`parse_domain_name`) | RFC 1035 §4.1.4 compression-pointer decoder |
-| `wire/query.go`                           | `wire/dns_wire.ts` (`build_query`)   | Query builder with EDNS(0) / DO, shared by the DoH and auth clients |
+| `wire/query.go`                           | `wire/dns_wire.ts` (`build_query`)   | Query builder with EDNS(0) / DO and optional CD (UP-016), shared by the DoH, auth and DoT clients |
 | `wire/builder.go`                         | `wire/dns_wire_util.ts`              | Wire builder |
 | `wire/message.go`                         | `wire/dns_message.ts`                | `parse_message`, `Header`, `Question`, `RawRR`, `RawMessage` (UP-002) |
 | `wire/rdata.go`                           | `wire/rdata_decoder.ts`              | `rdata_to_string`, RFC 3597 fallback (UP-002) |
+| `wire/rdata_svcb.go`                      | `wire/rdata_svcb.ts`                 | TLSA / SMIMEA and SVCB / HTTPS presentation (UP-017) |
+| (`net.IP.String`)                         | `wire/ip_format.ts`                  | IP address strings for the RDATA decoders |
 | `wire/edns.go`                            | `zone/rr/opt_rr.ts`                  | EDNS(0) OPT codec |
 | `zone/rr.go`, `zone/zone.go`              | `zone/dns_zone.ts`                   | `ResourceRecord`, `Zone`, handler registry |
 | `zone/generic.go`                         | `zone/generic.ts`                    | RFC 3597 `\# <len> <hex>` generic RDATA (UP-010) |
@@ -81,6 +83,7 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `dnssec/signer/bind.go`                   | `dnssec/signer/bind.ts`              | `parse_bind_private`, on top of `dnssec_key_loader.ts` (UP-013) |
 | `dnssec/signer/ds.go`                     | `dnssec/signer/ds.ts`                | `Key.ds`, `Key.anchor_ds`, `root_anchors` (UP-013) |
 | `dnssec/signer/nsec.go`                   | `dnssec/signer/nsec.ts`, `dnssec/signer/names.ts` | `build_nsec`, zone view, name helpers (UP-013) |
+| `dnssec/signer/nsec3.go`                  | `dnssec/signer/nsec3.ts`             | `build_nsec3`, `NSEC3Options` (UP-018) |
 | `dnssec/signer/sign.go`                   | `dnssec/signer/sign.ts`              | `sign_zone`, `SignOptions`, `rrsig_labels` (in `names.ts`) (UP-013) |
 | (sentinel errors in `dnssec/signer/key.go`) | `dnssec/signer/errors.ts`          | `SignerError`, `SignerKeyFormatError`, `SignerUnsupportedAlgorithmError` |
 | `verifier/`                               | `verifier/`                          | Chain-of-trust walker with pluggable `Resolver` (UP-001, UP-005, UP-006), `Cache` (UP-008), `Result.answer` (UP-015) |
@@ -88,9 +91,14 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `resolver/resolver.go`                    | `resolver/response.ts`               | `Response { records, ad, rcode }` (UP-009) |
 | `resolver/doh/`                           | `resolver/doh/`                      | RFC 8484 DoH client with provider failover (UP-007) |
 | `resolver/auth/`                          | `resolver/auth/`                     | UDP / TCP authoritative-DNS client with TC-fallback + failover (UP-003 / [#7](https://github.com/shigeya/dnsdata-js/issues/7)) |
+| `resolver/dot/`                           | `resolver/dot/`                      | RFC 7858 DNS-over-TLS client, `DoTClient` (UP-019) |
+| `resolver/internal/stream/`               | `resolver/stream.ts`                 | Two-octet length framing on TCP / TLS and the Node socket reader, shared by auth and DoT (UP-019) |
+| `resolver/internal/message/`              | `resolver/message.ts`                | Response message → `ResolverResponse`, shared by auth, DoH and DoT (UP-019) |
+| (`net.SplitHostPort` / `JoinHostPort`)    | `resolver/addr.ts`                   | `host:port` handling, shared by auth and DoT |
 | `resolver/memory/memory.go`               | `resolver/memory/memory.ts`          | `Authority`, `new_authority` (Go `New`), `with_zone`, `with_fault` (UP-014) |
 | `resolver/memory/index.go`                | `resolver/memory/zone_index.ts`, `resolver/memory/names.ts` | Per-zone index and name helpers (UP-014) |
-| `resolver/memory/answer.go`               | `resolver/memory/answer.ts`          | Referral / answer / CNAME / DNAME / wildcard / NODATA / NXDOMAIN responses (UP-014) |
+| `resolver/memory/answer.go`               | `resolver/memory/answer.ts`          | Referral / answer / CNAME / DNAME / wildcard / NODATA / NXDOMAIN responses (UP-014), NSEC or NSEC3 proofs (UP-018) |
+| `resolver/memory/nsec3.go`                | `resolver/memory/nsec3.ts`           | A zone's NSEC3 chain for the proofs (UP-018) |
 | (`ErrConfig` in `resolver/memory/memory.go`) | `resolver/memory/errors.ts`       | `MemoryConfigError` |
 | `resolver/memory/*_test.go`               | `../tests/resolver/memory/*.spec.ts` | Hierarchy, authority, example and shared-vector tests (UP-014) |
 | `testdata/rdata_roundtrip.json`           | `../tests/testdata/rdata_roundtrip.json` | Shared RDATA round-trip vectors; byte-identical, generated on the Go side only (UP-010) |
