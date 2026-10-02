@@ -23,11 +23,15 @@ reference for that feature's behaviour until both sides ship.
   here as
   [#5](https://github.com/shigeya/dnsdata-js/issues/5) –
   [#10](https://github.com/shigeya/dnsdata-js/issues/10).
-- UP-001, UP-002, and UP-003 have since been ported back in PRs
+- UP-001 through UP-006 have since been ported back in PRs
   [#17](https://github.com/shigeya/dnsdata-js/pull/17),
-  [#19](https://github.com/shigeya/dnsdata-js/pull/19), and the PR closing
-  [#7](https://github.com/shigeya/dnsdata-js/issues/7); UP-004 through
-  UP-006 are queued.
+  [#19](https://github.com/shigeya/dnsdata-js/pull/19),
+  [#21](https://github.com/shigeya/dnsdata-js/pull/21) –
+  [#24](https://github.com/shigeya/dnsdata-js/pull/24). The later
+  Go-originated features (UP-007 – UP-015: DoH client, verifier cache,
+  resolver response shape, RFC 3597 unknown types, strict reader,
+  canonical output, zone signer, in-memory authority, `Result.answer`)
+  have landed here too.
 - The robustness fixes catalogued as UF-001..004 in the Go-side
   `UPSTREAM_FEEDBACK.md` landed here through PRs
   [#11](https://github.com/shigeya/dnsdata-js/pull/11),
@@ -49,39 +53,49 @@ each language's idioms differ (e.g. `AbortSignal` ↔ `context.Context`,
 
 ## Cross-repo module mapping
 
-Each Go file maps to a single TS file (and vice versa) so port-backs are
-mechanical:
+Both sides use the same package directories, so port-backs are
+mechanical. TS paths are relative to `packages/core/src/`:
 
-| Go (`dnsdata-go`) | TS (`packages/core/src/lib/`) | Notes |
+| Go (`dnsdata-go`) | TS (`packages/core/src/`) | Notes |
 |---|---|---|
-| `wire/name.go`                            | `dns_wire.ts` (encode/decode)        | `domain_name2wire`, `wire2domain_name` |
-| `wire/name_decompress.go`                 | `dns_wire.ts` (`parse_domain_name`)  | RFC 1035 §4.1.4 compression-pointer decoder |
-| `wire/message.go`                         | `dns_message.ts`                     | `parse_message`, `Header`, `Question`, `RawRR`, `RawMessage` |
-| `wire/rdata.go`                           | `rdata_decoder.ts`                   | `rdata_to_string`, RFC 3597 fallback |
-| `zone/rr.go`, `zone/zone.go`              | `dns_zone.ts`                        | `ResourceRecord`, `Zone`, handler registry |
+| `types/`                                  | `types/dns_type_table.ts`, `types/algorithm.ts` | RR-type / class / opcode / rcode / algorithm tables, `TYPE<n>` / `CLASS<n>` (UP-010) |
+| `wire/name.go`                            | `wire/dns_wire.ts` (encode/decode)   | `domain_name2wire`, `wire2domain_name` |
+| `wire/name_decompress.go`                 | `wire/dns_wire.ts` (`parse_domain_name`) | RFC 1035 §4.1.4 compression-pointer decoder |
+| `wire/query.go`                           | `wire/dns_wire.ts` (`build_query`)   | Query builder with EDNS(0) / DO, shared by the DoH and auth clients |
+| `wire/builder.go`                         | `wire/dns_wire_util.ts`              | Wire builder |
+| `wire/message.go`                         | `wire/dns_message.ts`                | `parse_message`, `Header`, `Question`, `RawRR`, `RawMessage` (UP-002) |
+| `wire/rdata.go`                           | `wire/rdata_decoder.ts`              | `rdata_to_string`, RFC 3597 fallback (UP-002) |
+| `wire/edns.go`                            | `zone/rr/opt_rr.ts`                  | EDNS(0) OPT codec |
+| `zone/rr.go`, `zone/zone.go`              | `zone/dns_zone.ts`                   | `ResourceRecord`, `Zone`, handler registry |
+| `zone/generic.go`                         | `zone/generic.ts`                    | RFC 3597 `\# <len> <hex>` generic RDATA (UP-010) |
 | `zone/strict.go`                          | `zone/strict.ts`                     | Strict master-file reader behind `Zone.read_string_strict` (UP-011) |
 | `zone/canonical.go`                       | `zone/canonical.ts`                  | `compare_canonical_names`, canonical sort behind `Zone.records_canonical` (UP-012) |
-| `dnssec/zone.go`                          | `dnssec_zone.ts`                     | `DNSSecZone`, chain-of-trust verification helpers, canonical digest target |
-| `dnssec/{dnskey,rrsig,ds,nsec,nsec3}.go`  | `dnssec_rr.ts`                       | `DNSKey`, `RRSig`, `DNSRR_DS`, `DNSRR_NSEC`, `DNSRR_NSEC3` |
+| `zone/handlers.go`                        | `zone/handlers.ts`                   | Opt-in handler registration |
+| `zone/{tlsa,sshfp,openpgpkey,cert,uri,hinfo,rp,eui,csync,loc,naptr,svcb}.go` | `zone/rr/*_rr.ts` | Extended RR handlers (TLSA / SMIMEA are `dane_rr.ts`) |
+| `dnssec/zone.go`                          | `dnssec/dnssec_zone.ts`              | `DNSSecZone`, chain-of-trust verification helpers, canonical digest target |
+| `dnssec/{dnskey,rrsig,ds,nsec,nsec3}.go`  | `dnssec/{dnskey,rrsig,ds,nsec,nsec3}.ts`, `dnssec/dnssec_rr.ts` | `DNSKey`, `RRSig`, `DNSRR_DS`, `DNSRR_NSEC`, `DNSRR_NSEC3`, NSEC / NSEC3 proof primitives (UP-004) |
+| `dnssec/canon.go`                         | `dnssec/dnssec_util.ts`              | Canonical-name compare + `LabelCount` / `LastNLabels` (UP-004) |
+| `dnssec/crypto.go`                        | `dnssec/crypto.ts`                   | Signature verification |
+| `dnssec/handlers.go`                      | `dnssec/handlers.ts`                 | DNSSEC handler registration |
 | `dnssec/signer/key.go`                    | `dnssec/signer/key.ts`               | `Key`, `generate_key`, `new_key`, `parse_pkcs8_pem`, DNSKEY flag constants (UP-013) |
 | `dnssec/signer/bind.go`                   | `dnssec/signer/bind.ts`              | `parse_bind_private`, on top of `dnssec_key_loader.ts` (UP-013) |
 | `dnssec/signer/ds.go`                     | `dnssec/signer/ds.ts`                | `Key.ds`, `Key.anchor_ds`, `root_anchors` (UP-013) |
 | `dnssec/signer/nsec.go`                   | `dnssec/signer/nsec.ts`, `dnssec/signer/names.ts` | `build_nsec`, zone view, name helpers (UP-013) |
 | `dnssec/signer/sign.go`                   | `dnssec/signer/sign.ts`              | `sign_zone`, `SignOptions`, `rrsig_labels` (in `names.ts`) (UP-013) |
 | (sentinel errors in `dnssec/signer/key.go`) | `dnssec/signer/errors.ts`          | `SignerError`, `SignerKeyFormatError`, `SignerUnsupportedAlgorithmError` |
-| `verifier/`                               | `verifier.ts`                        | Chain-of-trust walker with pluggable `Resolver` |
-| `types/`                                  | `dns_type_table.ts`                  | RR-type / class / rcode / algorithm tables |
-| `dnssec/anchors.go`                       | `dnssec_key_loader.ts`, `root_anchors.ts` | Root trust anchors |
-| `resolver/auth/`                          | `resolver_auth.ts`                   | UDP / TCP authoritative-DNS client with TC-fallback + failover (UP-003 / [#7](https://github.com/shigeya/dnsdata-js/issues/7)) |
+| `verifier/`                               | `verifier/`                          | Chain-of-trust walker with pluggable `Resolver` (UP-001, UP-005, UP-006), `Cache` (UP-008), `Result.answer` (UP-015) |
+| `dnssec/anchors.go`                       | `dnssec/dnssec_key_loader.ts`, `dnssec/root_anchors.ts` | Root trust anchors |
+| `resolver/resolver.go`                    | `resolver/response.ts`               | `Response { records, ad, rcode }` (UP-009) |
+| `resolver/doh/`                           | `resolver/doh/`                      | RFC 8484 DoH client with provider failover (UP-007) |
+| `resolver/auth/`                          | `resolver/auth/`                     | UDP / TCP authoritative-DNS client with TC-fallback + failover (UP-003 / [#7](https://github.com/shigeya/dnsdata-js/issues/7)) |
 | `resolver/memory/memory.go`               | `resolver/memory/memory.ts`          | `Authority`, `new_authority` (Go `New`), `with_zone`, `with_fault` (UP-014) |
 | `resolver/memory/index.go`                | `resolver/memory/zone_index.ts`, `resolver/memory/names.ts` | Per-zone index and name helpers (UP-014) |
 | `resolver/memory/answer.go`               | `resolver/memory/answer.ts`          | Referral / answer / CNAME / DNAME / wildcard / NODATA / NXDOMAIN responses (UP-014) |
 | (`ErrConfig` in `resolver/memory/memory.go`) | `resolver/memory/errors.ts`       | `MemoryConfigError` |
-| `resolver/memory/*_test.go`               | `tests/resolver/memory/*.spec.ts`    | Hierarchy, authority, example and shared-vector tests (UP-014) |
-| `testdata/signed/`                        | `tests/testdata/signed/`             | Shared signed hierarchy and expected verdicts; byte-identical, generated on the Go side only |
+| `resolver/memory/*_test.go`               | `../tests/resolver/memory/*.spec.ts` | Hierarchy, authority, example and shared-vector tests (UP-014) |
+| `testdata/rdata_roundtrip.json`           | `../tests/testdata/rdata_roundtrip.json` | Shared RDATA round-trip vectors; byte-identical, generated on the Go side only (UP-010) |
+| `testdata/signed/`                        | `../tests/testdata/signed/`          | Shared signed hierarchy and expected verdicts; byte-identical, generated on the Go side only |
 | (distributed via per-package `errors.go`) | `dns_exception.ts`                   | TS-specific exception hierarchy (`DNSWireError`, `UnknownOpCodeError`, …); Go uses sentinel `errors.Is`-friendly vars per package |
-| (folded into `wire/` package)             | `dns_wire_util.ts`                   | TS-specific wire helpers; folded into Go's `wire/` package |
-| (not yet ported)                          | `rr/*.ts`                            | Modern RR handlers (CERT, CSYNC, DANE/TLSA/SMIMEA, EUI48/64, HINFO, LOC, NAPTR, OPENPGPKEY, OPT, RP, SSHFP, SVCB/HTTPS, URI) — TS only at this time |
 
 ## Drift policy
 
@@ -103,30 +117,19 @@ DNSSEC verdict spellings (`"secure"` / `"secure-nodata"` /
 A few aspects of the TS implementation have no direct Go analogue and are
 intentional language-idiomatic choices:
 
-- **Import-time handler registry.** Importing
-  [`dnssec_rr.ts`](../packages/core/src/lib/dnssec_rr.ts) registers the
-  DNSSEC RR handlers as a side effect of module load via
-  `register_rr_handler()`. The Go side requires an explicit
-  `dnssec.RegisterHandlers()` call from the constructor because the Go
-  project forbids side effects from `init()`.
 - **Node `crypto` module.** All DNSSEC signing/verification goes through
   Node's built-in `crypto`. The Go side uses `crypto/...` standard
   library packages directly (`crypto/rsa`, `crypto/ecdsa`,
   `crypto/ed25519`, `crypto/sha256`, …).
-- **Lerna monorepo layout.** Sources live under `packages/core/src/lib/`
-  with flat file names (e.g. `dns_wire.ts`). The Go side uses package
-  directories (`wire/`, `dnssec/`, …) with shorter file names per
-  package.
+- **Lerna monorepo layout.** Sources live under `packages/core/src/`
+  in the same package directories as the Go side (`wire/`, `zone/`,
+  `dnssec/`, …), with a single `registerAllHandlers()` entry point in
+  `index.ts` where Go has per-package `RegisterHandlers()`.
 - **TypeScript exception hierarchy.** Errors are subclasses of `Error`
   (`DNSWireError`, `UnknownOpCodeError`, `DNSZoneRDataFormatError`, …)
   living in `dns_exception.ts`; callers discriminate via `instanceof`.
   Go uses sentinel `var Err…` values in per-package `errors.go` files;
   callers discriminate via `errors.Is`.
-- **Modern RR handler set.** TS ships handlers for CERT, CSYNC,
-  DANE (TLSA, SMIMEA), EUI48/64, HINFO, LOC, NAPTR, OPENPGPKEY, OPT,
-  RP, SSHFP, SVCB/HTTPS, and URI under `packages/core/src/lib/rr/`.
-  Go has not yet ported these — its current focus is the DNSSEC chain
-  primitives and the verifier.
 
 ## Feature origin tagging
 
