@@ -44,6 +44,11 @@ version?" question answerable at a glance.
   `RootAnchors` type. New `parseRootAnchors(text)` validates the shape
   and throws `RootAnchorsFormatError`; `loadRootAnchors` uses it and
   still falls back to the built-in anchors on error.
+- `rdata_to_string` presents a TXT character-string that is valid UTF-8
+  as that text, as dnsdata-go does, instead of one code point per
+  octet; the presentation now reads back to the same octets. Other
+  octets are presented as before. New shared vector
+  "TXT UTF-8 with BOM".
 
 ## [0.7.0] — 2026-09-24
 

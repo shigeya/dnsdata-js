@@ -64,7 +64,16 @@ describe("RDATA round trip", () => {
     const vectors = load_rdata_vectors();
 
     it("loads all shared vectors", () => {
-        expect(vectors.length).toBe(33);
+        expect(vectors.length).toBe(34);
+    });
+
+    // Same bytes and expected string as dnsdata-go
+    // TestRDataToString_TXTUTF8: UTF-8 passes through, BOM included.
+    it("presents UTF-8 TXT as dnsdata-go does", () => {
+        const utf8 = (h: string): string => Buffer.from(h, 'hex').toString('utf8');
+        const rdata = hex_bytes("09636166c3a920e29c9304efbbbf41");
+        expect(rdata_to_string(rdata, TYPE_TXT, rdata, 0))
+            .toBe(`"${utf8("636166c3a920e29c93")}" "${utf8("efbbbf41")}"`);
     });
 
     it.each(vectors.map(v => [v.name, v] as [string, RDataVector]))("%s", (_name, v) => {

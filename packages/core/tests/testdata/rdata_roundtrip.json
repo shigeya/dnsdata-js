@@ -10,6 +10,7 @@
     {"name": "MX", "type": 15, "rdata": "000a046d61696c076578616d706c6503636f6d00"},
     {"name": "TXT single", "type": 16, "rdata": "0b68656c6c6f20776f726c64"},
     {"name": "TXT multi with escapes and empty", "type": 16, "rdata": "0b68656c6c6f20776f726c640461225c6200"},
+    {"name": "TXT UTF-8 with BOM", "type": 16, "rdata": "09636166c3a920e29c9304efbbbf41"},
     {"name": "SOA", "type": 6, "rdata": "036e7331076578616d706c6503636f6d000a686f73746d6173746572076578616d706c6503636f6d000000000100001c2000000e10001275000000012c"},
     {"name": "SRV", "type": 33, "rdata": "000a00050050036e7331076578616d706c6503636f6d00"},
     {"name": "CAA", "type": 257, "rdata": "0005697373756563612e6578616d706c65"},

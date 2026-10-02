@@ -166,18 +166,25 @@ function decode_txt(rdata: Uint8Array): string {
     return parts.join(' ');
 }
 
-function txt_quote(s: Uint8Array): string {
-    let out = '"';
-    for (let i = 0; i < s.length; i++) {
-        const c = s[i];
-        if (c === 0x22 /* " */ || c === 0x5C /* \ */) {
-            out += '\\' + String.fromCharCode(c);
-        } else {
-            out += String.fromCharCode(c);
-        }
+// Strict UTF-8 that keeps a leading BOM, so decoding is lossless.
+const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+// Decodes a character-string as UTF-8 when it is valid UTF-8, the text
+// dnsdata-go's raw bytes stand for and what the zone encoder writes back.
+// Other octets map one to one onto code points (latin1).
+function txt_text(s: Uint8Array): string {
+    try {
+        return UTF8_STRICT.decode(s);
+    } catch {
+        let out = '';
+        for (let i = 0; i < s.length; i++) out += String.fromCharCode(s[i]);
+        return out;
     }
-    out += '"';
-    return out;
+}
+
+// Wraps s in double quotes, escaping internal `"` and `\`.
+function txt_quote(s: Uint8Array): string {
+    return '"' + txt_text(s).replace(/["\\]/g, '\\$&') + '"';
 }
 
 function decode_soa(msg: Uint8Array, rdata: Uint8Array, rdataStart: number): string {
