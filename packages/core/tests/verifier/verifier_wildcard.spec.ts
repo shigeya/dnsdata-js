@@ -31,6 +31,9 @@ const TYPE_A      = StringToRRType('A');
 
 const INCEPTION = 1000000000;
 const EXPIRE    = 2000000000;
+// Inside [INCEPTION, EXPIRE], so the fixtures do not expire with the
+// wall clock.
+const NOW       = new Date(1500000000 * 1000);
 
 //////////////////////////////////////////////////////////// fixtures
 
@@ -177,7 +180,7 @@ describe('Verifier wildcard synthesis (UP-006 / #10)', () => {
             [key('foo.example.com.', TYPE_DS),     []],
             [key('foo.example.com.', TYPE_A),      [...fooA, ...apexNsec]],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('foo.example.com.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -210,7 +213,7 @@ describe('Verifier wildcard synthesis (UP-006 / #10)', () => {
             [key('foo.example.com.', TYPE_DS),  []],
             [key('foo.example.com.', TYPE_A),   find_with_sigs(example.zone, 'foo.example.com.', TYPE_A)],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('foo.example.com.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Bogus);
@@ -239,7 +242,7 @@ describe('Verifier wildcard synthesis (UP-006 / #10)', () => {
             [key('www.example.com.', TYPE_DS),  []],
             [key('www.example.com.', TYPE_A),   find_with_sigs(example.zone, 'www.example.com.', TYPE_A)],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('www.example.com.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);

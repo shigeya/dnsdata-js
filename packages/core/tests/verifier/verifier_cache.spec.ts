@@ -29,6 +29,9 @@ const TYPE_AAAA = StringToRRType('AAAA');
 
 const INCEPTION = 1000000000;
 const EXPIRE    = 2000000000;
+// Inside [INCEPTION, EXPIRE], so the fixtures do not expire with the
+// wall clock.
+const NOW       = new Date(1500000000 * 1000);
 
 //////////////////////////////////////////////////////////// fixtures
 
@@ -191,7 +194,7 @@ describe('Verifier with cache', () => {
     it('avoids resolver calls when the same name is validated twice', async () => {
         const { resolver, anchors } = build_chain();
         const cache = new MemoryCache();
-        const v = new Verifier({ resolver, trustAnchors: anchors, cache });
+        const v = new Verifier({ resolver, trustAnchors: anchors, cache, now: () => NOW });
 
         const first = await v.validate('www.example.com.', TYPE_A);
         expect(first.verdict).toBe(Verdict.Secure);
@@ -210,7 +213,7 @@ describe('Verifier with cache', () => {
     it('shares ancestor lookups across different leaves', async () => {
         const { resolver, anchors } = build_chain();
         const cache = new MemoryCache();
-        const v = new Verifier({ resolver, trustAnchors: anchors, cache });
+        const v = new Verifier({ resolver, trustAnchors: anchors, cache, now: () => NOW });
 
         await v.validate('www.example.com.', TYPE_A);
         const firstCalls = resolver.queries.length;
@@ -225,7 +228,7 @@ describe('Verifier with cache', () => {
     // MUST behave exactly like the cache-less code path.
     it('ignores a nullish cache option', async () => {
         const { resolver, anchors } = build_chain();
-        const v = new Verifier({ resolver, trustAnchors: anchors, cache: undefined });
+        const v = new Verifier({ resolver, trustAnchors: anchors, cache: undefined, now: () => NOW });
 
         const result = await v.validate('www.example.com.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -240,7 +243,7 @@ describe('Verifier with cache', () => {
             get: () => undefined,
             put: () => { /* noop */ },
         };
-        const v = new Verifier({ resolver, trustAnchors: anchors, cache: alwaysMiss });
+        const v = new Verifier({ resolver, trustAnchors: anchors, cache: alwaysMiss, now: () => NOW });
 
         const first = await v.validate('www.example.com.', TYPE_A);
         const firstCalls = resolver.queries.length;

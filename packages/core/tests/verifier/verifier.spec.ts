@@ -36,6 +36,9 @@ const TYPE_A = StringToRRType('A');
 
 const INCEPTION = 1000000000;
 const EXPIRE    = 2000000000;
+// Inside [INCEPTION, EXPIRE], so the fixtures do not expire with the
+// wall clock.
+const NOW       = new Date(1500000000 * 1000);
 
 //////////////////////////////////////////////////////////// fixtures
 
@@ -191,7 +194,7 @@ describe('Verifier construction', () => {
 describe('Verifier.validate input handling', () => {
     it('rejects empty qname', async () => {
         const resolver: Resolver = { async query() { return { records: [], ad: false, rcode: 0 }; } };
-        const v = new Verifier({ resolver });
+        const v = new Verifier({ resolver, now: () => NOW });
         await expect(v.validate('', TYPE_A)).rejects.toBeInstanceOf(VerifierInvalidQNameError);
     });
 
@@ -199,14 +202,14 @@ describe('Verifier.validate input handling', () => {
         const resolver: Resolver = {
             async query() { throw new Error('network down'); },
         };
-        const v = new Verifier({ resolver });
+        const v = new Verifier({ resolver, now: () => NOW });
         await expect(v.validate('example.com.', TYPE_A))
             .rejects.toBeInstanceOf(VerifierResolverError);
     });
 
     it('honours AbortSignal before querying', async () => {
         const resolver: Resolver = { async query() { return { records: [], ad: false, rcode: 0 }; } };
-        const v = new Verifier({ resolver });
+        const v = new Verifier({ resolver, now: () => NOW });
         const ctrl = new AbortController();
         ctrl.abort();
         await expect(v.validate('example.com.', TYPE_A, ctrl.signal))
@@ -226,7 +229,7 @@ describe('Verifier chain walk', () => {
             ds: [{ keyTag: 0, algorithm: 8, digestType: 2, digest: '00'.repeat(32) }],
             dnskeys: [],
         };
-        const v = new Verifier({ resolver, trustAnchors: bogusAnchors });
+        const v = new Verifier({ resolver, trustAnchors: bogusAnchors, now: () => NOW });
         const result = await v.validate('example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Bogus);
         expect(result.bogusAt).toBe('.');
@@ -247,7 +250,7 @@ describe('Verifier chain walk', () => {
         add_signed(wideAdJp, 'wide.ad.jp.', 'A', '203.178.136.36');
 
         const resolver = new ZoneCollectionResolver([root.zone, jp.zone, wideAdJp.zone]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('wide.ad.jp.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -281,7 +284,7 @@ describe('Verifier chain walk', () => {
         add_signed(wideAdJp, 'sfc.wide.ad.jp.', 'A', '203.178.137.5');
 
         const resolver = new ZoneCollectionResolver([root.zone, jp.zone, wideAdJp.zone]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('sfc.wide.ad.jp.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -320,7 +323,7 @@ describe('Verifier chain walk', () => {
         tamperedZone.records.set(rrsigKey, [new ResourceRecord('host.example.', 3600, 'IN', 'RRSIG', tamperedValue)]);
 
         const resolver = new ZoneCollectionResolver([root.zone, example.zone]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('host.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Bogus);
@@ -334,7 +337,7 @@ describe('Verifier chain walk', () => {
         // No A record added at host.example. → resolver returns
         // empty.
         const resolver = new ZoneCollectionResolver([root.zone, example.zone]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('host.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Indeterminate);
@@ -363,7 +366,7 @@ describe('Verifier negative proofs (UP-004 / #8)', () => {
             // DS at example.com. → empty + signed NSEC proving no-DS.
             [key('example.com.', TYPE_DS), find_with_sigs(com.zone, 'example.com.', TYPE_NSEC)],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('www.example.com.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Insecure);
@@ -392,7 +395,7 @@ describe('Verifier negative proofs (UP-004 / #8)', () => {
             [key('host.example.com.', TYPE_DS), []],
             [key('host.example.com.', TYPE_A), []],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('host.example.com.', TYPE_A);
         expect(result.verdict).not.toBe(Verdict.Insecure);
@@ -423,7 +426,7 @@ describe('Verifier negative proofs (UP-004 / #8)', () => {
             // NODATA proof.
             [key('www.example.com.', StringToRRType('AAAA')), find_with_sigs(example.zone, 'www.example.com.', TYPE_NSEC)],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('www.example.com.', StringToRRType('AAAA'));
         expect(result.verdict).toBe(Verdict.SecureNoData);
@@ -458,7 +461,7 @@ describe('Verifier negative proofs (UP-004 / #8)', () => {
             [key('missing.example.com.', TYPE_DS), []],
             [key('missing.example.com.', TYPE_A), nsecs],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('missing.example.com.', TYPE_A);
         expect(result.verdict).toBe(Verdict.SecureNXDomain);
@@ -577,7 +580,7 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
             [key('host.example.', TYPE_DS), []],
             [key('host.example.', TYPE_A), find_with_sigs(example.zone, 'host.example.', TYPE_A)],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('www.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -613,7 +616,7 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
             [key('c.example.', TYPE_A), find_with_sigs(example.zone, 'c.example.', TYPE_A)],
             [key('c.example.', TYPE_DS), []],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('a.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -646,7 +649,7 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
             [key('new.example.', TYPE_DS), []],
             [key('x.new.example.', TYPE_A), find_with_sigs(example.zone, 'x.new.example.', TYPE_A)],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('x.old.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Secure);
@@ -677,7 +680,7 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
             [key('b.example.', TYPE_A), find_with_sigs(example.zone, 'b.example.', TYPE_CNAME)],
             [key('b.example.', TYPE_DS), []],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('a.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Bogus);
@@ -715,7 +718,7 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
             [key('host.example.', TYPE_A), find_with_sigs(example.zone, 'host.example.', TYPE_A)],
             [key('host.example.', TYPE_DS), []],
         ]);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('www.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Bogus);
@@ -746,7 +749,7 @@ describe('Verifier alias chasing (UP-005 / #9)', () => {
             entries.push([key(`n${i}.example.`, TYPE_DS), []]);
         }
         const resolver = new MapResolver(entries);
-        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root) });
+        const v = new Verifier({ resolver, trustAnchors: trust_anchor_for(root), now: () => NOW });
 
         const result = await v.validate('n0.example.', TYPE_A);
         expect(result.verdict).toBe(Verdict.Bogus);
