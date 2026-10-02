@@ -15,13 +15,17 @@
 // stable RFC-frozen formats.
 //
 // Types handled: A, AAAA, NS, CNAME, PTR, DNAME, MX, TXT, SOA, SRV,
-// CAA, DNSKEY, CDNSKEY, DS, CDS, RRSIG, NSEC, NSEC3, NSEC3PARAM.
-// Anything else returns the RFC 3597 §5 unknown-type generic form
-// `\# <rdlen> <hex>`.
+// CAA, DNSKEY, CDNSKEY, DS, CDS, RRSIG, NSEC, NSEC3, NSEC3PARAM, TLSA,
+// SMIMEA, SVCB, HTTPS (the last four in rdata_svcb.ts). Anything else
+// returns the RFC 3597 §5 unknown-type generic form `\# <rdlen> <hex>`,
+// as do TLSA / SVCB RDATA that is malformed or that the zone parser
+// could not read back.
 
 import { parse_domain_name } from './dns_wire';
 import { RRTypeName, StringToRRType } from '../types/dns_type_table';
 import { DNSRDataDecodeError } from '../dns_exception';
+import { format_ipv4, format_ipv6, IPV4_LENGTH, IPV6_LENGTH } from './ip_format';
+import { svcb_presentation, tlsa_presentation } from './rdata_svcb';
 
 const TYPE_A          = StringToRRType('A');
 const TYPE_AAAA       = StringToRRType('AAAA');
@@ -42,6 +46,10 @@ const TYPE_RRSIG      = StringToRRType('RRSIG');
 const TYPE_NSEC       = StringToRRType('NSEC');
 const TYPE_NSEC3      = StringToRRType('NSEC3');
 const TYPE_NSEC3PARAM = StringToRRType('NSEC3PARAM');
+const TYPE_TLSA       = StringToRRType('TLSA');
+const TYPE_SMIMEA     = StringToRRType('SMIMEA');
+const TYPE_SVCB       = StringToRRType('SVCB');
+const TYPE_HTTPS      = StringToRRType('HTTPS');
 
 // Converts the RDATA section of a resource record into its
 // presentation-form value (the right-hand side of a zone-file line).
@@ -72,6 +80,10 @@ export function rdata_to_string(msg: Uint8Array, rrtype: number, rdata: Uint8Arr
         case TYPE_NSEC:       return decode_nsec(msg, rdata, rdataStart);
         case TYPE_NSEC3:      return decode_nsec3(rdata);
         case TYPE_NSEC3PARAM: return decode_nsec3param(rdata);
+        case TYPE_TLSA:
+        case TYPE_SMIMEA:     return tlsa_presentation(rdata) ?? format_generic_rdata(rdata);
+        case TYPE_SVCB:
+        case TYPE_HTTPS:      return svcb_presentation(rdata) ?? format_generic_rdata(rdata);
         default:              return format_generic_rdata(rdata);
     }
 }
@@ -89,43 +101,17 @@ export function format_generic_rdata(rdata: Uint8Array): string {
 export const rfc3597 = format_generic_rdata;
 
 function decode_a(rdata: Uint8Array): string {
-    if (rdata.length !== 4) {
+    if (rdata.length !== IPV4_LENGTH) {
         throw new DNSRDataDecodeError(`A rdata length ${rdata.length}, want 4`);
     }
-    return `${rdata[0]}.${rdata[1]}.${rdata[2]}.${rdata[3]}`;
+    return format_ipv4(rdata);
 }
 
 function decode_aaaa(rdata: Uint8Array): string {
-    if (rdata.length !== 16) {
+    if (rdata.length !== IPV6_LENGTH) {
         throw new DNSRDataDecodeError(`AAAA rdata length ${rdata.length}, want 16`);
     }
-    const groups: string[] = [];
-    for (let i = 0; i < 16; i += 2) {
-        groups.push(((rdata[i] << 8) | rdata[i + 1]).toString(16));
-    }
-    return collapse_ipv6(groups);
-}
-
-// RFC 5952-style IPv6 string: collapse the longest run of consecutive
-// `0` groups to `::`. Single-zero runs are NOT collapsed (RFC 5952
-// §4.2.2). Matches Go's net.IP.To16().String() output for well-formed
-// inputs.
-function collapse_ipv6(groups: string[]): string {
-    let bestStart = -1, bestLen = 0;
-    let curStart = -1, curLen = 0;
-    for (let i = 0; i < groups.length; i++) {
-        if (groups[i] === '0') {
-            if (curStart < 0) curStart = i;
-            curLen++;
-            if (curLen > bestLen) { bestStart = curStart; bestLen = curLen; }
-        } else {
-            curStart = -1; curLen = 0;
-        }
-    }
-    if (bestLen < 2) return groups.join(':');
-    const head = groups.slice(0, bestStart).join(':');
-    const tail = groups.slice(bestStart + bestLen).join(':');
-    return `${head}::${tail}`;
+    return format_ipv6(rdata);
 }
 
 function decode_single_name(msg: Uint8Array, rdataStart: number): string {

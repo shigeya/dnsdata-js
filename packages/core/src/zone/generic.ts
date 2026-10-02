@@ -14,9 +14,6 @@ export const GENERIC_RDATA_MARKER = '\\#';
 // MAX_RDATA_LENGTH is the largest RDLENGTH a uint16 can carry.
 export const MAX_RDATA_LENGTH = 0xFFFF;
 
-// Minimum TLSA / SMIMEA RDATA: usage(1) + selector(1) + matching type(1).
-const TLSA_FIXED_LENGTH = 3;
-
 // parse_generic_rdata parses the RFC 3597 §5 generic RDATA form
 // `\# <length> <hex>` (the hex may be split by whitespace). Returns null
 // when value is not in that form. Throws DNSZonePresentationFormatError
@@ -47,14 +44,6 @@ function parse_rdata_length(field: string): number {
         throw new DNSZonePresentationFormatError(`generic RDATA: length "${field}"`);
     }
     return n;
-}
-
-// tlsa_presentation renders TLSA / SMIMEA octets as `usage selector
-// matching-type hex`. Short input yields a value the parser rejects.
-export function tlsa_presentation(rdata: Uint8Array): string {
-    if (rdata.length < TLSA_FIXED_LENGTH) return '';
-    const data = Buffer.from(rdata.subarray(TLSA_FIXED_LENGTH)).toString('hex');
-    return `${rdata[0]} ${rdata[1]} ${rdata[2]} ${data}`;
 }
 
 // split_character_strings splits RDATA made of RFC 1035 §3.3

@@ -275,3 +275,62 @@ describe('rdata_to_string', () => {
         expect(() => rdata_to_string(msg, TYPE_AAAA, r, rdataStart)).toThrow(DNSRDataDecodeError);
     });
 });
+
+// Same bytes and strings as dnsdata-go wire/rdata_svcb_test.go.
+describe('rdata_to_string TLSA / SMIMEA / SVCB / HTTPS', () => {
+    const TYPE_TLSA   = StringToRRType('TLSA');
+    const TYPE_SMIMEA = StringToRRType('SMIMEA');
+    const TYPE_SVCB   = StringToRRType('SVCB');
+    const TYPE_HTTPS  = StringToRRType('HTTPS');
+    const ALL_KEYS = '000100' +
+        '0000000400010003' +
+        '00010006026832026833' +
+        '00020000' +
+        '0003000220fb' +
+        '00040008c0000201c0000202' +
+        '00050003010203' +
+        '0006001020010db8000000000000000000000001' +
+        'fde80002abcd' +
+        'fde90000';
+
+    // [name, type, rdata hex, expected presentation]
+    const cases: [string, number, string, string][] = [
+        // RFC 6698 §2.2 / RFC 8162 §2. Empty certificate data stays generic.
+        ['TLSA', TYPE_TLSA, '030101abcd', '3 1 1 abcd'],
+        ['SMIMEA', TYPE_SMIMEA, '0300010A0B', '3 0 1 0a0b'],
+        ['TLSA empty data', TYPE_TLSA, '030101', '\\# 3 030101'],
+        // RFC 9460 §2.1, in the form DNSRR_SVCB reads.
+        ['SVCB', TYPE_SVCB, '000103737663076578616d706c6503636f6d00000100030268320003000201bb',
+            '1 svc.example.com. alpn=h2 port=443'],
+        ['HTTPS', TYPE_HTTPS, '00010000010003026832', '1 . alpn=h2'],
+        ['AliasMode', TYPE_HTTPS, '000003666f6f00', '0 foo.'],
+        ['all keys', TYPE_SVCB, ALL_KEYS,
+            '1 . mandatory=alpn,port alpn=h2,h3 no-default-alpn port=8443 ' +
+            'ipv4hint=192.0.2.1,192.0.2.2 ech=AQID ipv6hint=2001:db8::1 key65000=abcd key65001'],
+        // Values the parser would not read back to the same octets.
+        ['unsorted keys', TYPE_SVCB, '0001000003000201bb00010003026832',
+            '\\# 16 0001000003000201bb00010003026832'],
+        ['alpn with comma', TYPE_SVCB, '0001000001000403612c62', '\\# 11 0001000001000403612c62'],
+        ['alpn empty', TYPE_SVCB, '00010000010000', '\\# 7 00010000010000'],
+        ['no-default-alpn with value', TYPE_SVCB, '0001000002000100', '\\# 8 0001000002000100'],
+        ['port short', TYPE_SVCB, '0001000003000101', '\\# 8 0001000003000101'],
+        ['ipv4hint ragged', TYPE_SVCB, '00010000040005c000020101', '\\# 12 00010000040005c000020101'],
+        ['ipv6hint IPv4-mapped', TYPE_SVCB, '0001000006001000000000000000000000ffffc0000201',
+            '\\# 23 0001000006001000000000000000000000ffffc0000201'],
+        ['uppercase target', TYPE_SVCB, '000103464f4f00', '\\# 7 000103464f4f00'],
+        ['mandatory unsorted', TYPE_SVCB, '000100000000040003000100010003026832000300020035',
+            '\\# 24 000100000000040003000100010003026832000300020035'],
+        // Malformed RDATA stays generic, so one bad record does not fail a response.
+        ['SVCB short', TYPE_SVCB, '0001', '\\# 2 0001'],
+        ['SVCB bad target', TYPE_SVCB, '000105', '\\# 3 000105'],
+        ['SVCB header truncated', TYPE_SVCB, '000100000100', '\\# 6 000100000100'],
+        ['SVCB value truncated', TYPE_SVCB, '0001000001000502', '\\# 8 0001000001000502'],
+        ['alpn id truncated', TYPE_SVCB, '000100000100020561', '\\# 9 000100000100020561'],
+        ['TLSA short', TYPE_TLSA, '0301', '\\# 2 0301'],
+    ];
+
+    it.each(cases)('presents %s as dnsdata-go does', (_name, type, hex, want) => {
+        const rdata = new Uint8Array(Buffer.from(hex, 'hex'));
+        expect(rdata_to_string(rdata, type, rdata, 0)).toBe(want);
+    });
+});

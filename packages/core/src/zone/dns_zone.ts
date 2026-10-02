@@ -12,7 +12,6 @@ import {
     MAX_RDATA_LENGTH,
     parse_generic_rdata,
     split_character_strings,
-    tlsa_presentation,
 } from './generic';
 import { parse_zone_strict } from './strict';
 import { sort_canonical } from './canonical';
@@ -22,8 +21,6 @@ export type ns_type = number;
 export type ns_class = number;
 
 const TYPE_TXT    = 16;
-const TYPE_TLSA   = 52;
-const TYPE_SMIMEA = 53;
 
 // Octets of RDLENGTH in front of the RDATA written by get_wire_body.
 const RDLENGTH_OCTETS = 2;
@@ -274,9 +271,6 @@ export class ResourceRecord {
     }
 
     private _presentation_from_generic(rdata: Uint8Array): string | null {
-        if (this.type === TYPE_TLSA || this.type === TYPE_SMIMEA) {
-            return tlsa_presentation(rdata);
-        }
         const pres = rdata_to_string(rdata, this.type, rdata, 0);
         return pres.startsWith(GENERIC_RDATA_MARKER) ? null : pres;
     }

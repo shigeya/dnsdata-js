@@ -65,7 +65,7 @@ describe("RDATA round trip", () => {
     const vectors = load_rdata_vectors();
 
     it("loads all shared vectors", () => {
-        expect(vectors.length).toBe(36);
+        expect(vectors.length).toBe(39);
     });
 
     // Same bytes and expected strings as dnsdata-go
