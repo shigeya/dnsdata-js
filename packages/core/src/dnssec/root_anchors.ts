@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { CustomError } from 'ts-custom-error';
 
 export interface RootAnchorDS {
     keyTag: number;
@@ -57,6 +58,44 @@ export const BUILTIN_ROOT_ANCHORS: RootAnchors = {
     dnskeys: [],  // DNSKEY records are fetched via DoH during chain verification
 };
 
+// A root-anchors document that is not JSON or not of the RootAnchors
+// shape. Mirrors dnsdata-go `dnssec.ErrAnchors`.
+export class RootAnchorsFormatError extends CustomError {
+    public constructor(message?: string) {
+        super(message);
+    }
+}
+
+// Returns field as an array; null (how dnsdata-go writes an empty
+// list) and a missing field read as empty.
+function list_field<T>(doc: Record<string, unknown>, field: string): T[] {
+    const v = doc[field];
+    if (v === null || v === undefined) return [];
+    if (!Array.isArray(v)) throw new RootAnchorsFormatError(`root anchors: ${field} is not a list`);
+    return v as T[];
+}
+
+// Parses a root-anchors JSON document, the format shared with
+// dnsdata-go. Throws RootAnchorsFormatError for anything else.
+export function parseRootAnchors(text: string): RootAnchors {
+    let doc: unknown;
+    try {
+        doc = JSON.parse(text);
+    } catch (e) {
+        throw new RootAnchorsFormatError(`root anchors: ${(e as Error).message}`);
+    }
+    if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
+        throw new RootAnchorsFormatError('root anchors: not a JSON object');
+    }
+    const obj = doc as Record<string, unknown>;
+    return {
+        lastUpdated: typeof obj.lastUpdated === 'string' ? obj.lastUpdated : '',
+        source: typeof obj.source === 'string' ? obj.source : '',
+        ds: list_field<RootAnchorDS>(obj, 'ds'),
+        dnskeys: list_field<RootAnchorDNSKEY>(obj, 'dnskeys'),
+    };
+}
+
 export function getRootAnchorsPath(): string {
     return path.join(os.homedir(), '.dnsdata', 'root-anchors.json');
 }
@@ -65,8 +104,7 @@ export function loadRootAnchors(): LoadedRootAnchors {
     const extPath = getRootAnchorsPath();
     try {
         if (fs.existsSync(extPath)) {
-            const data = fs.readFileSync(extPath, 'utf-8');
-            const anchors: RootAnchors = JSON.parse(data);
+            const anchors = parseRootAnchors(fs.readFileSync(extPath, 'utf-8'));
             return { anchors, isExternal: true };
         }
     } catch {

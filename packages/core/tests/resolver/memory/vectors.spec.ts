@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as signer from '../../../src/dnssec/signer';
-import { RootAnchors } from '../../../src/dnssec/root_anchors';
+import { RootAnchors, parseRootAnchors } from '../../../src/dnssec/root_anchors';
 import { Authority, new_authority, with_zone } from '../../../src/resolver/memory';
 import { Verdict } from '../../../src/verifier/verdict';
 import { Verifier } from '../../../src/verifier/verifier';
@@ -40,7 +40,7 @@ function loadAuthority(): Authority {
 }
 
 function loadAnchors(): RootAnchors {
-    return JSON.parse(read('root-anchors.json')) as RootAnchors;
+    return parseRootAnchors(read('root-anchors.json'));
 }
 
 function loadCases(): VectorCase[] {

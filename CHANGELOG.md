@@ -39,6 +39,11 @@ version?" question answerable at a glance.
   <hex>`) no longer throws. It re-parsed the record's generic value as
   presentation form; it now re-parses the presentation decoded from the
   octets, exposed as `ResourceRecord.handler_value()`.
+- A root-anchors file written by dnsdata-go (`"dnskeys": null`, how Go
+  encodes an empty list) reads as `dnskeys: []`, matching the
+  `RootAnchors` type. New `parseRootAnchors(text)` validates the shape
+  and throws `RootAnchorsFormatError`; `loadRootAnchors` uses it and
+  still falls back to the built-in anchors on error.
 
 ## [0.7.0] — 2026-09-24
 
