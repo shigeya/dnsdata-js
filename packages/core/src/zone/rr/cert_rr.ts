@@ -70,7 +70,7 @@ export class DNSRR_CERT extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_CERT {
-        return new DNSRR_CERT(this._rr, this.value);
+        return new DNSRR_CERT(this._rr, this.source_value);
     }
 }
 

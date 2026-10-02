@@ -72,7 +72,7 @@ export class DNSRR_NAPTR extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_NAPTR {
-        return new DNSRR_NAPTR(this._rr, this.value);
+        return new DNSRR_NAPTR(this._rr, this.source_value);
     }
 }
 

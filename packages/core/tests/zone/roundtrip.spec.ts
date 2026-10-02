@@ -140,6 +140,21 @@ describe("get_handler from generic", () => {
         const rr = new ResourceRecord("_443._tcp.example.", 60, "IN", "TLSA", "\\# 2 0301");
         expect(rr.get_handler()).toBeNull();
     });
+
+    // clone() re-parses the presentation the handler was built from, not
+    // the record's generic value.
+    it.each(load_rdata_vectors().map(v => [v.name, v] as [string, RDataVector]))("clones %s", (_name, v) => {
+        const rr = new ResourceRecord("example.com.", 300, CLASS_IN, v.type, format_generic_rdata(hex_bytes(v.rdata)));
+        const h = rr.get_handler();
+        if (h === null) return;
+        const c = h.clone();
+        expect(c).toBeInstanceOf(h.constructor);
+        const want = new WireBuilder();
+        h.get_wire_body(want);
+        const got = new WireBuilder();
+        c.get_wire_body(got);
+        expect(to_hex(got.build())).toBe(to_hex(want.build()));
+    });
 });
 
 describe("txt_strings", () => {

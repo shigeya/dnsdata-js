@@ -173,6 +173,6 @@ export class DNSRR_NSEC extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_NSEC {
-        return new DNSRR_NSEC(this._rr, this.value);
+        return new DNSRR_NSEC(this._rr, this.source_value);
     }
 }

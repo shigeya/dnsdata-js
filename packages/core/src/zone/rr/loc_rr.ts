@@ -146,7 +146,7 @@ export class DNSRR_LOC extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_LOC {
-        return new DNSRR_LOC(this._rr, this.value);
+        return new DNSRR_LOC(this._rr, this.source_value);
     }
 }
 

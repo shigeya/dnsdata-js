@@ -35,6 +35,10 @@ version?" question answerable at a glance.
   a wildcard CNAME is synthesised for queries of any type (RFC 4592
   §3.3.3), not only CNAME; and a DNAME answer carries the unsigned
   CNAME synthesised from it (RFC 6672 §5.3.1).
+- `clone()` of a handler built from RFC 3597 generic RDATA (`\# <len>
+  <hex>`) no longer throws. It re-parsed the record's generic value as
+  presentation form; it now re-parses the presentation decoded from the
+  octets, exposed as `ResourceRecord.handler_value()`.
 
 ## [0.7.0] — 2026-09-24
 

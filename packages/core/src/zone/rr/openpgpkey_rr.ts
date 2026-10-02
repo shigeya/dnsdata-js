@@ -31,7 +31,7 @@ export class DNSRR_OPENPGPKEY extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_OPENPGPKEY {
-        return new DNSRR_OPENPGPKEY(this._rr, this.value);
+        return new DNSRR_OPENPGPKEY(this._rr, this.source_value);
     }
 }
 

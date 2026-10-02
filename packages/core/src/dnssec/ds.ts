@@ -49,6 +49,6 @@ export class DNSRR_DS extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_DS {
-        return new DNSRR_DS(this._rr, this.value);
+        return new DNSRR_DS(this._rr, this.source_value);
     }
 }

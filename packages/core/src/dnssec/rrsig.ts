@@ -108,7 +108,7 @@ export class RRSig extends ResourceRecordHandler {
     }
 
     clone(): RRSig {
-        const c = new RRSig(this._rr, this.value);
+        const c = new RRSig(this._rr, this.source_value);
         return c;
     }
 }

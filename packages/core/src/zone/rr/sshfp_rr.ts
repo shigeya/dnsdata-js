@@ -35,7 +35,7 @@ export class DNSRR_SSHFP extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_SSHFP {
-        return new DNSRR_SSHFP(this._rr, this.value);
+        return new DNSRR_SSHFP(this._rr, this.source_value);
     }
 }
 

@@ -135,7 +135,7 @@ export class DNSRR_NSEC3 extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_NSEC3 {
-        return new DNSRR_NSEC3(this._rr, this.value);
+        return new DNSRR_NSEC3(this._rr, this.source_value);
     }
 }
 
@@ -172,7 +172,7 @@ export class DNSRR_NSEC3PARAM extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_NSEC3PARAM {
-        return new DNSRR_NSEC3PARAM(this._rr, this.value);
+        return new DNSRR_NSEC3PARAM(this._rr, this.source_value);
     }
 }
 

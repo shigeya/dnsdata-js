@@ -73,7 +73,7 @@ export class DNSRR_HINFO extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_HINFO {
-        return new DNSRR_HINFO(this._rr, this.value);
+        return new DNSRR_HINFO(this._rr, this.source_value);
     }
 }
 

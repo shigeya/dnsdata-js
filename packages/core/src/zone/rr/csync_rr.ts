@@ -58,7 +58,7 @@ export class DNSRR_CSYNC extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_CSYNC {
-        return new DNSRR_CSYNC(this._rr, this.value);
+        return new DNSRR_CSYNC(this._rr, this.source_value);
     }
 }
 

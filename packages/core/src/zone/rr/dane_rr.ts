@@ -36,7 +36,7 @@ export class DNSRR_TLSA extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_TLSA {
-        return new DNSRR_TLSA(this._rr, this.value);
+        return new DNSRR_TLSA(this._rr, this.source_value);
     }
 }
 
@@ -68,7 +68,7 @@ export class DNSRR_SMIMEA extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_SMIMEA {
-        return new DNSRR_SMIMEA(this._rr, this.value);
+        return new DNSRR_SMIMEA(this._rr, this.source_value);
     }
 }
 

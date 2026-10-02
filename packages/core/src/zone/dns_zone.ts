@@ -105,6 +105,18 @@ export abstract class ResourceRecordHandler {
         return this._rr.value;
     }
 
+    // The presentation value this handler was parsed from. Differs from
+    // value when the record holds RFC 3597 generic RDATA, so clone()
+    // re-parses this rather than value.
+    protected get source_value(): string {
+        if (!this._rr) throw new Error("No parent ResourceRecord");
+        const v = this._rr.handler_value();
+        if (v === null) {
+            throw new DNSZoneRDataFormatError(`no presentation form for ${RRTypeName(this._rr.type)}`);
+        }
+        return v;
+    }
+
     abstract get_wire_body(builder: WireBuilder): void;
     abstract clone(): ResourceRecordHandler;
 }
@@ -235,6 +247,23 @@ export class ResourceRecord {
         return raw === null ? parse_txt_value(this.value) : split_character_strings(raw);
     }
 
+    // Returns the presentation value a handler factory parses: value
+    // itself, or for a value in RFC 3597 generic form the presentation
+    // decoded from its octets by type. Null when the octets have no
+    // presentation form for this type. Throws for malformed generic RDATA.
+    handler_value(): string | null {
+        const raw = this.generic_rdata();
+        return raw === null ? this.value : this._presentation_from_generic(raw);
+    }
+
+    private _presentation_from_generic(rdata: Uint8Array): string | null {
+        if (this.type === TYPE_TLSA || this.type === TYPE_SMIMEA) {
+            return tlsa_presentation(rdata);
+        }
+        const pres = rdata_to_string(rdata, this.type, rdata, 0);
+        return pres.startsWith(GENERIC_RDATA_MARKER) ? null : pres;
+    }
+
     // Builds the handler for a record held in generic form. Only consulted
     // when a factory is registered for the type, so handler registration
     // stays opt-in. Returns null when the octets do not decode.
@@ -242,12 +271,8 @@ export class ResourceRecord {
         try {
             const rdata_factory = rdata_factory_registry.get(this.type);
             if (rdata_factory) return rdata_factory(this, rdata);
-            if (this.type === TYPE_TLSA || this.type === TYPE_SMIMEA) {
-                return factory(this, tlsa_presentation(rdata));
-            }
-            const pres = rdata_to_string(rdata, this.type, rdata, 0);
-            if (pres.startsWith(GENERIC_RDATA_MARKER)) return null;
-            return factory(this, pres);
+            const pres = this._presentation_from_generic(rdata);
+            return pres === null ? null : factory(this, pres);
         } catch {
             return null;
         }

@@ -40,7 +40,7 @@ export class DNSRR_EUI extends ResourceRecordHandler {
     }
 
     clone(): DNSRR_EUI {
-        return new DNSRR_EUI(this._rr, this.value, this.expectedLength);
+        return new DNSRR_EUI(this._rr, this.source_value, this.expectedLength);
     }
 }
 
