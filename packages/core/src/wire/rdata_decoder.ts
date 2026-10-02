@@ -166,25 +166,58 @@ function decode_txt(rdata: Uint8Array): string {
     return parts.join(' ');
 }
 
-// Strict UTF-8 that keeps a leading BOM, so decoding is lossless.
-const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+// UTF-8 that keeps a BOM; only ever given a validated sequence.
+const UTF8 = new TextDecoder('utf-8', { ignoreBOM: true });
 
-// Decodes a character-string as UTF-8 when it is valid UTF-8, the text
-// dnsdata-go's raw bytes stand for and what the zone encoder writes back.
-// Other octets map one to one onto code points (latin1).
-function txt_text(s: Uint8Array): string {
-    try {
-        return UTF8_STRICT.decode(s);
-    } catch {
-        let out = '';
-        for (let i = 0; i < s.length; i++) out += String.fromCharCode(s[i]);
-        return out;
+// Returns the length of the valid UTF-8 sequence starting at s[i]
+// (RFC 3629 §4, as dnsdata-go's utf8.DecodeRune accepts it), or 0 when
+// s[i] does not start one.
+function utf8_sequence_length(s: Uint8Array, i: number): number {
+    const c = s[i];
+    let n: number;
+    let lo = 0x80;
+    let hi = 0xbf;
+    if (c >= 0xc2 && c <= 0xdf) {
+        n = 2;
+    } else if (c >= 0xe0 && c <= 0xef) {
+        n = 3;
+        if (c === 0xe0) lo = 0xa0;
+        if (c === 0xed) hi = 0x9f;
+    } else if (c >= 0xf0 && c <= 0xf4) {
+        n = 4;
+        if (c === 0xf0) lo = 0x90;
+        if (c === 0xf4) hi = 0x8f;
+    } else {
+        return 0;
     }
+    if (i + n > s.length || s[i + 1] < lo || s[i + 1] > hi) return 0;
+    for (let k = 2; k < n; k++) {
+        if (s[i + k] < 0x80 || s[i + k] > 0xbf) return 0;
+    }
+    return n;
 }
 
-// Wraps s in double quotes, escaping internal `"` and `\`.
+// Writes s as a quoted RFC 1035 §5.1 <character-string>: `"` and `\`
+// are backslash-escaped, printable ASCII and valid UTF-8 are kept as
+// they are, and every other octet is written as \DDD. Matches
+// dnsdata-go txtQuote.
 function txt_quote(s: Uint8Array): string {
-    return '"' + txt_text(s).replace(/["\\]/g, '\\$&') + '"';
+    let out = '"';
+    for (let i = 0; i < s.length;) {
+        const c = s[i];
+        if (c === 0x22 /* " */ || c === 0x5C /* \ */) {
+            out += '\\' + String.fromCharCode(c);
+            i++;
+        } else if (c >= 0x20 && c < 0x7f) {
+            out += String.fromCharCode(c);
+            i++;
+        } else {
+            const n = c >= 0x80 ? utf8_sequence_length(s, i) : 0;
+            out += n > 0 ? UTF8.decode(s.subarray(i, i + n)) : '\\' + String(c).padStart(3, '0');
+            i += n > 0 ? n : 1;
+        }
+    }
+    return out + '"';
 }
 
 function decode_soa(msg: Uint8Array, rdata: Uint8Array, rdataStart: number): string {
@@ -239,9 +272,7 @@ function decode_caa(rdata: Uint8Array): string {
     }
     let tag = '';
     for (let i = 0; i < tagLen; i++) tag += String.fromCharCode(rdata[2 + i]);
-    let value = '';
-    for (let i = 2 + tagLen; i < rdata.length; i++) value += String.fromCharCode(rdata[i]);
-    return `${flags} ${tag} "${value}"`;
+    return `${flags} ${tag} ${txt_quote(rdata.subarray(2 + tagLen))}`;
 }
 
 function decode_dnskey(rdata: Uint8Array): string {

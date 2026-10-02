@@ -16,11 +16,12 @@ import { DNSRR_TLSA } from "../../src/zone/rr/dane_rr";
 import { DNSRR_SVCB } from "../../src/zone/rr/svcb_rr";
 import { DNSKey } from "../../src/dnssec/dnssec_rr";
 import { DNSSecZone } from "../../src/dnssec/dnssec_zone";
-import { DNSZonePresentationFormatError } from "../../src/dns_exception";
+import { DNSZonePresentationFormatError, DNSZoneRDataFormatError } from "../../src/dns_exception";
 
 const CLASS_IN = 1;
 const TYPE_A = 1;
 const TYPE_TXT = 16;
+const TYPE_CAA = 257;
 const TYPE_RRSIG = 46;
 const TYPE_DNSKEY = 48;
 const TYPE_HTTPS = 65;
@@ -64,7 +65,18 @@ describe("RDATA round trip", () => {
     const vectors = load_rdata_vectors();
 
     it("loads all shared vectors", () => {
-        expect(vectors.length).toBe(34);
+        expect(vectors.length).toBe(36);
+    });
+
+    // Same bytes and expected strings as dnsdata-go
+    // TestRDataToString_CharacterStringEscapes (RFC 1035 §5.1 \DDD).
+    it.each([
+        ["TXT", TYPE_TXT, "074101ff0a7fc3a9", '"A\\001\\255\\010\\127' + "c3a9" + '"'],
+        ["CAA", TYPE_CAA, "000569737375656361c3a9225cff", '0 issue "ca' + "c3a9" + '\\"\\\\\\255"'],
+    ])("presents %s escapes as dnsdata-go does", (_name, type, hex, want) => {
+        const rdata = hex_bytes(hex);
+        const expected = want.replace("c3a9", Buffer.from("c3a9", "hex").toString("utf8"));
+        expect(rdata_to_string(rdata, type, rdata, 0)).toBe(expected);
     });
 
     // Same bytes and expected string as dnsdata-go
@@ -179,6 +191,17 @@ describe("txt_strings", () => {
     it("rejects a non-TXT record", () => {
         const a = new ResourceRecord("example.", 60, "IN", "A", "192.0.2.1");
         expect(() => a.txt_strings()).toThrow();
+    });
+
+    // Same value as dnsdata-go TestTXTStringsEscapes: \DDD is one octet,
+    // \X is X, in quoted strings and bare tokens; above 255 is an error.
+    it("reads RFC 1035 escapes", () => {
+        const rr = new ResourceRecord("example.", 60, "IN", "TXT", '"\\065\\"x\\255" b\\032c');
+        expect(to_hex(wire_body_of(rr))).toBe("04412278ff03622063");
+        expect(rr.txt_strings()).toEqual(['A"x' + String.fromCharCode(0xfffd), "b c"]);
+        const over = new ResourceRecord("example.", 60, "IN", "TXT", '"\\256"');
+        expect(() => over.txt_strings()).toThrow(DNSZoneRDataFormatError);
+        expect(() => over.get_wire_body(new WireBuilder())).toThrow(DNSZoneRDataFormatError);
     });
 
     it("rejects a truncated character-string", () => {

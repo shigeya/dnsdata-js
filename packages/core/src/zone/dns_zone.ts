@@ -157,39 +157,55 @@ function parse_ipv6(addr: string): Uint8Array | null {
     return bytes;
 }
 
-// Parse TXT value: handles quoted strings and bare strings
-function parse_txt_value(value: string): string[] {
-    const result: string[] = [];
+function is_txt_space(ch: string): boolean {
+    return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
+}
+
+// Returns the UTF-8 octets of the character at value[i] and its length
+// in UTF-16 code units.
+function char_octets(value: string, i: number): [Uint8Array, number] {
+    const ch = String.fromCodePoint(value.codePointAt(i) ?? 0);
+    return [Buffer.from(ch, 'utf8'), ch.length];
+}
+
+// Decodes the escape after a backslash at value[i]: three decimal digits
+// are one octet (\DDD), anything else is taken literally. Returns the
+// octets and the number of code units consumed.
+function parse_txt_escape(value: string, i: number): [Uint8Array, number] {
+    const ddd = value.substring(i, i + 3);
+    if (/^\d{3}$/.test(ddd)) {
+        const v = parseInt(ddd, 10);
+        if (v > 255) throw new DNSZoneRDataFormatError(`\\${ddd} is not an octet`);
+        return [Uint8Array.of(v), 3];
+    }
+    return char_octets(value, i);
+}
+
+// Tokenises a TXT presentation value into character-strings as octets:
+// quoted strings and bare whitespace-delimited tokens, both with
+// RFC 1035 §5.1 escapes (\DDD is one octet, \X is X). Matches
+// dnsdata-go parseTXTValue. Throws DNSZoneRDataFormatError for a \DDD
+// above 255.
+function parse_txt_value(value: string): Uint8Array[] {
+    const result: Uint8Array[] = [];
     let i = 0;
     while (i < value.length) {
-        // Skip whitespace
-        while (i < value.length && /\s/.test(value[i])) i++;
+        while (i < value.length && is_txt_space(value[i])) i++;
         if (i >= value.length) break;
-
-        if (value[i] === '"') {
-            // Quoted string
-            i++; // skip opening quote
-            let s = '';
-            while (i < value.length && value[i] !== '"') {
-                if (value[i] === '\\' && i + 1 < value.length) {
-                    i++;
-                    s += value[i];
-                } else {
-                    s += value[i];
-                }
-                i++;
-            }
-            if (i < value.length) i++; // skip closing quote
-            result.push(s);
-        } else {
-            // Bare string (until whitespace)
-            let s = '';
-            while (i < value.length && !/\s/.test(value[i])) {
-                s += value[i];
-                i++;
-            }
-            result.push(s);
+        const quoted = value[i] === '"';
+        if (quoted) i++;
+        const octets: number[] = [];
+        while (i < value.length) {
+            const ch = value[i];
+            if (quoted ? ch === '"' : is_txt_space(ch)) break;
+            const [bytes, width] = ch === '\\' && i + 1 < value.length
+                ? parse_txt_escape(value, i + 1)
+                : char_octets(value, i);
+            octets.push(...bytes);
+            i += ch === '\\' && i + 1 < value.length ? 1 + width : width;
         }
+        if (quoted && i < value.length) i++; // closing quote
+        result.push(Uint8Array.from(octets));
     }
     return result;
 }
@@ -244,7 +260,8 @@ export class ResourceRecord {
             throw new DNSZoneRDataFormatError(`txt_strings on type ${RRTypeName(this.type)}`);
         }
         const raw = this.generic_rdata();
-        return raw === null ? parse_txt_value(this.value) : split_character_strings(raw);
+        if (raw !== null) return split_character_strings(raw);
+        return parse_txt_value(this.value).map(s => Buffer.from(s).toString('utf8'));
     }
 
     // Returns the presentation value a handler factory parses: value
@@ -382,8 +399,7 @@ export class ResourceRecord {
         const strings = parse_txt_value(this.value);
         let total_len = 0;
         const encoded: Uint8Array[] = [];
-        for (const s of strings) {
-            const bytes = Buffer.from(s, 'utf8');
+        for (const bytes of strings) {
             // Split into 255-byte chunks
             for (let off = 0; off < bytes.length || (off === 0 && bytes.length === 0); off += 255) {
                 const chunk = bytes.slice(off, Math.min(off + 255, bytes.length));
@@ -415,13 +431,18 @@ export class ResourceRecord {
         builder.append_bytes(target_wire);
     }
 
-    // CAA: flags(1) + tag_length(1) + tag + value
+    // CAA: flags(1) + tag_length(1) + tag + value. The value is one
+    // character-string, quoted or bare, with the same escapes as TXT.
     private _wire_body_caa(builder: WireBuilder): void {
-        const m = this.value.match(/^(\d+)\s+(\S+)\s+"([^"]*)"/);
+        const m = this.value.match(/^(\d+)\s+(\S+)\s+(.*)$/);
         if (!m) throw new DNSZoneRDataFormatError(`CAA: invalid presentation "${this.value}"`);
         const flags = parseInt(m[1]);
         const tag = Buffer.from(m[2], 'ascii');
-        const caa_value = Buffer.from(m[3], 'utf8');
+        const values = parse_txt_value(m[3]);
+        if (values.length !== 1) {
+            throw new DNSZoneRDataFormatError(`CAA: value is not one character-string "${this.value}"`);
+        }
+        const caa_value = values[0];
         builder.append_uint16(2 + tag.length + caa_value.length); // rdlength
         builder.append_uint8(flags);
         builder.append_uint8(tag.length);

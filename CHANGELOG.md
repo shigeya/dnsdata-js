@@ -14,6 +14,21 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Changed
+
+- TXT character-strings and the CAA value use RFC 1035 §5.1 escapes in
+  both directions, as in dnsdata-go. `rdata_to_string` writes octets
+  that are neither printable ASCII nor part of valid UTF-8 as `\DDD`
+  (control characters included); previously they became one code point
+  each. Reading a TXT or CAA value, `\DDD` is one octet and `\X` is `X`,
+  in quoted strings and bare tokens; previously `\065` read as `065`. A
+  `\DDD` above 255 throws `DNSZoneRDataFormatError`. Only space, tab,
+  CR and LF separate bare tokens, as in dnsdata-go.
+- The CAA value is presented and read like a TXT string, so non-ASCII
+  values round-trip (they were presented one code point per octet and
+  written back as UTF-8). Shared vectors "TXT control and invalid
+  UTF-8" and "CAA non-ASCII and escapes".
+
 ### Fixed
 
 - DNAME answers validate. The leaf step tried CNAME before DNAME, and
