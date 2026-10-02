@@ -3,6 +3,7 @@
 // trustAnchors, the clock via its `now` option), and the in-memory
 // authority answers every query the verifier makes.
 
+import * as signer from '../../../src/dnssec/signer';
 import { StringToRRType } from '../../../src/types/dns_type_table';
 import { with_fault } from '../../../src/resolver/memory';
 import { Verdict } from '../../../src/verifier/verdict';
@@ -14,25 +15,59 @@ const T = (name: string): number => StringToRRType(name);
 const RCODE_SERVFAIL = 2;
 const MS_PER_DAY = 24 * 3600 * 1000;
 
-describe('memory authority: private-root hierarchy verdicts', () => {
+const VERDICT_CASES: ReadonlyArray<readonly [string, string, number, Verdict]> = [
+    ['positive answer', 'www.example.test.', T('A'), Verdict.Secure],
+    ['apex answer', 'example.test.', T('SOA'), Verdict.Secure],
+    ['type without a mnemonic', 'key.example.test.', 65400, Verdict.Secure],
+    ['name does not exist', 'nope.example.test.', T('A'), Verdict.SecureNXDomain],
+    ['name does not exist in the parent', 'nope.test.', T('A'), Verdict.SecureNXDomain],
+    ['type does not exist', 'www.example.test.', T('MX'), Verdict.SecureNoData],
+    ['apex type does not exist', 'test.', T('MX'), Verdict.SecureNoData],
+    ['wildcard expansion', 'x.wild.example.test.', T('A'), Verdict.Secure],
+    ['wildcard without the type', 'x.wild.example.test.', T('TXT'), Verdict.SecureNoData],
+    ['empty non-terminal', 'wild.example.test.', T('A'), Verdict.SecureNoData],
+    ['CNAME followed', 'alias.example.test.', T('A'), Verdict.Secure],
+    ['unsigned delegation', 'www.insecure.test.', T('A'), Verdict.Insecure],
+];
+
+// Cases whose verdict is Insecure under NSEC3 opt-out: every NSEC3 has
+// the flag, so a name whose next closer name is only covered may be an
+// insecure delegation (RFC 5155 §6, §9.2). Names with a matching NSEC3
+// stay Secure.
+const OPT_OUT_INSECURE = [
+    'name does not exist', 'name does not exist in the parent',
+    'wildcard expansion', 'wildcard without the type',
+];
+
+// verdictCases returns VERDICT_CASES, with the insecure ones turned
+// into Insecure and a flag to check the opt-out reason.
+function verdictCases(insecure: readonly string[] = []): [string, string, number, Verdict, boolean][] {
+    return VERDICT_CASES.map(([name, qname, qtype, want]) => {
+        const optOut = insecure.includes(name);
+        return [name, qname, qtype, optOut ? Verdict.Insecure : want, optOut];
+    });
+}
+
+describe.each([
+    ['NSEC', undefined, []],
+    ['NSEC3 RFC 9276', {}, []],
+    ['NSEC3 salt+iterations', { iterations: 3, salt: new Uint8Array([0xab, 0xcd]) }, []],
+    ['NSEC3 opt-out', { optOut: true }, OPT_OUT_INSECURE],
+] as [string, signer.NSEC3Options | undefined, string[]][])(
+    'memory authority: private-root hierarchy verdicts, %s', (_chain, nsec3, insecure) => {
+        const h = buildHierarchy(nsec3);
+        const v = newVerifier(h, newAuthority(h, h.leaf), now);
+
+        it.each(verdictCases(insecure))('%s', async (_name, qname, qtype, want, optOut) => {
+            const res = await v.validate(qname, qtype);
+            expect(`${res.verdict} ${res.bogusAt ?? ''} ${res.bogusReason ?? ''}`.trim()).toBe(want);
+            if (optOut) expect(res.insecureReason).toContain('opt-out');
+        });
+    });
+
+describe('memory authority: private-root hierarchy records', () => {
     const h = buildHierarchy();
     const v = newVerifier(h, newAuthority(h, h.leaf), now);
-
-    it.each([
-        ['positive answer', 'www.example.test.', T('A'), Verdict.Secure],
-        ['apex answer', 'example.test.', T('SOA'), Verdict.Secure],
-        ['type without a mnemonic', 'key.example.test.', 65400, Verdict.Secure],
-        ['name does not exist', 'nope.example.test.', T('A'), Verdict.SecureNXDomain],
-        ['type does not exist', 'www.example.test.', T('MX'), Verdict.SecureNoData],
-        ['wildcard expansion', 'x.wild.example.test.', T('A'), Verdict.Secure],
-        ['wildcard without the type', 'x.wild.example.test.', T('TXT'), Verdict.SecureNoData],
-        ['empty non-terminal', 'wild.example.test.', T('A'), Verdict.SecureNoData],
-        ['CNAME followed', 'alias.example.test.', T('A'), Verdict.Secure],
-        ['unsigned delegation', 'www.insecure.test.', T('A'), Verdict.Insecure],
-    ] as const)('%s', async (_name, qname, qtype, want) => {
-        const res = await v.validate(qname, qtype);
-        expect(`${res.verdict} ${res.bogusAt ?? ''} ${res.bogusReason ?? ''}`.trim()).toBe(want);
-    });
 
     it('records the wildcard expansion and the CNAME hop', async () => {
         const wild = await v.validate('x.wild.example.test.', T('A'));

@@ -21,8 +21,8 @@ export function answer(idx: ZoneIndex, name: string, qtype: number): ResolverRes
         return existing(idx, name, qtype);
     }
     if (idx.has_name(name)) {
-        // Empty non-terminal: NODATA, proven by the NSEC spanning it.
-        return response(RCODE_NOERROR, idx.covering_nsec(name));
+        // Empty non-terminal: NODATA.
+        return response(RCODE_NOERROR, no_data_proof(idx, name));
     }
     const dname = idx.dname_above(name);
     if (dname !== null) {
@@ -45,15 +45,15 @@ function dname_answer(idx: ZoneIndex, name: string, owner: string): ResolverResp
 }
 
 // referral answers a name at or below a delegation point: the NS
-// RRset, and the signed DS RRset or the NSEC proving there is none.
+// RRset, and the signed DS RRset or the proof there is none.
 function referral(idx: ZoneIndex, cut: string): ResolverResponse {
     const ds = idx.with_sigs(cut, TYPE_DS);
-    const proof = ds.length > 0 ? ds : idx.with_sigs(cut, TYPE_NSEC);
+    const proof = ds.length > 0 ? ds : no_data_proof(idx, cut);
     return response(RCODE_NOERROR, [...idx.rrset(cut, TYPE_NS), ...proof]);
 }
 
 // existing answers a name that owns records: the RRset, a CNAME to
-// follow, or NODATA with the name's NSEC.
+// follow, or NODATA.
 function existing(idx: ZoneIndex, name: string, qtype: number): ResolverResponse {
     const rs = idx.with_sigs(name, qtype);
     if (rs.length > 0) return response(RCODE_NOERROR, rs);
@@ -61,7 +61,7 @@ function existing(idx: ZoneIndex, name: string, qtype: number): ResolverResponse
         const cname = idx.with_sigs(name, TYPE_CNAME);
         if (cname.length > 0) return response(RCODE_NOERROR, cname);
     }
-    return response(RCODE_NOERROR, idx.with_sigs(name, TYPE_NSEC));
+    return response(RCODE_NOERROR, no_data_proof(idx, name));
 }
 
 // missing answers a name that does not exist: wildcard synthesis when
@@ -72,17 +72,60 @@ function missing(idx: ZoneIndex, name: string, qtype: number): ResolverResponse 
     const ce = idx.closest_encloser(name);
     const wildcard = wildcard_of(ce);
     if (idx.records(wildcard).length === 0) {
-        return response(RCODE_NXDOMAIN, [...idx.covering_nsec(name), ...idx.covering_nsec(wildcard)]);
+        return response(RCODE_NXDOMAIN, nx_domain_proof(idx, name, ce));
     }
-    const proof = idx.covering_nsec(next_closer(name, ce));
+    const proof = next_closer_proof(idx, name, ce);
     let rs = idx.with_sigs(wildcard, qtype);
     if (rs.length === 0 && qtype !== TYPE_CNAME) {
         rs = idx.with_sigs(wildcard, TYPE_CNAME);
     }
     if (rs.length === 0) {
-        return response(RCODE_NOERROR, [...proof, ...idx.with_sigs(wildcard, TYPE_NSEC)]);
+        // Wildcard NODATA (RFC 5155 §7.2.5 for NSEC3).
+        return response(RCODE_NOERROR, [...encloser_proof(idx, ce), ...proof, ...no_data_proof(idx, wildcard)]);
     }
     return response(RCODE_NOERROR, [...rs.map((rr) => copy_as(rr, name)), ...proof]);
+}
+
+// no_data_proof proves that name has no RRset of the asked type: the
+// NSEC at name, or for an empty non-terminal the NSEC covering it; the
+// NSEC3 matching name (RFC 5155 §7.2.3), or without one (opt-out) the
+// closest provable encloser proof (§7.2.4).
+function no_data_proof(idx: ZoneIndex, name: string): ResourceRecord[] {
+    const chain = idx.nsec3;
+    if (chain === null) {
+        const nsec = idx.with_sigs(name, TYPE_NSEC);
+        return nsec.length > 0 ? nsec : idx.covering_nsec(name);
+    }
+    const owner = chain.matching(name);
+    return owner !== null ? idx.nsec3_at(owner) : idx.closest_encloser_proof(chain, name).proof;
+}
+
+// nx_domain_proof proves that name does not exist and that no wildcard
+// at its closest encloser ce does: NSECs covering both, or the closest
+// encloser proof and the NSEC3 covering the wildcard (RFC 5155 §7.2.2).
+function nx_domain_proof(idx: ZoneIndex, name: string, ce: string): ResourceRecord[] {
+    const chain = idx.nsec3;
+    if (chain === null) {
+        return [...idx.covering_nsec(name), ...idx.covering_nsec(wildcard_of(ce))];
+    }
+    const { proof, encloser } = idx.closest_encloser_proof(chain, name);
+    return [...proof, ...idx.nsec3_at(chain.covering(wildcard_of(encloser)))];
+}
+
+// next_closer_proof proves that the next closer name of name below its
+// closest encloser ce does not exist, as a wildcard answer needs
+// (RFC 4035 §3.1.3.3, RFC 5155 §7.2.6).
+function next_closer_proof(idx: ZoneIndex, name: string, ce: string): ResourceRecord[] {
+    const chain = idx.nsec3;
+    if (chain === null) return idx.covering_nsec(next_closer(name, ce));
+    return idx.nsec3_at(chain.covering(next_closer(name, ce)));
+}
+
+// encloser_proof is the NSEC3 matching the closest encloser ce, which
+// NSEC3 wildcard NODATA adds (RFC 5155 §7.2.5); NSEC needs none.
+function encloser_proof(idx: ZoneIndex, ce: string): ResourceRecord[] {
+    const chain = idx.nsec3;
+    return chain === null ? [] : idx.nsec3_at(chain.matching(ce));
 }
 
 // response copies records (so callers cannot alter the authority) and

@@ -25,6 +25,18 @@ version?" question answerable at a glance.
   so a validating upstream returns data it would reject as bogus
   instead of SERVFAIL. Off by default; queries are unchanged. Ports
   dnsdata-go's `WithCheckingDisabled`.
+- `nsec3` in `signer.SignOptions` and `signer.build_nsec3`: sign with
+  an NSEC3 chain (RFC 5155 §7.1) and an NSEC3PARAM at the apex instead
+  of NSEC. `{}` is the RFC 9276 profile (no extra iterations, no
+  salt); `iterations`, `salt` and `optOut` (unsigned delegations left
+  out of the chain, RFC 5155 §6) are options. NSEC stays the default.
+  BIND's `dnssec-verify` accepts both profiles. Ports dnsdata-go.
+- The memory authority answers zones signed with NSEC3 with NSEC3
+  proofs (RFC 5155 §7.2): NODATA, empty non-terminal, NXDOMAIN,
+  wildcard answer and wildcard NODATA, and the referral to a
+  delegation without DS, by the matching NSEC3 or, under opt-out, the
+  closest provable encloser proof. Ports dnsdata-go.
+- `base32hex_encode` is exported from `wire/rdata_decoder`.
 
 ### Changed
 

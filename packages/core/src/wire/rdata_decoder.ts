@@ -412,7 +412,7 @@ function decode_bitmap(bitmap: Uint8Array): number[] {
 // Used by NSEC3 owner labels. Inverse of the existing
 // base32hex_decode in dnssec_rr.ts; reproduced here so the wire
 // layer has no dnssec dependency.
-function base32hex_encode(b: Uint8Array): string {
+export function base32hex_encode(b: Uint8Array): string {
     const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUV';
     if (b.length === 0) return '';
     const bits: number[] = [];

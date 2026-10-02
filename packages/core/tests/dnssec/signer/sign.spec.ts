@@ -2,10 +2,6 @@
 // every algorithm and the negative cases (tampered data, a clock
 // outside the RRSIG window).
 
-import { execFileSync } from 'child_process';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { DNSRR_NSEC } from '../../../src/dnssec/dnssec_rr';
 import { StringToRRType } from '../../../src/types/dns_type_table';
 import {
@@ -24,6 +20,7 @@ import {
     findTool,
     mustKey,
     rrsigsAt,
+    runOnZoneFile,
     signOpts,
     testExpiration,
     testInception,
@@ -285,19 +282,6 @@ function signedNow(keys: signer.Key[]): Zone {
         inception: new Date(now - SECONDS_PER_HOUR * MS_PER_SECOND),
         expiration: new Date(now + 24 * SECONDS_PER_HOUR * MS_PER_SECOND),
     });
-}
-
-// runOnZoneFile writes text to a temporary zone file and runs tool with
-// args followed by that file; throws when the tool exits non-zero.
-function runOnZoneFile(text: string, tool: string, args: string[]): string {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'signer-bind-'));
-    const file = path.join(dir, 'example.test.zone');
-    try {
-        fs.writeFileSync(file, text + '\n', { mode: 0o600 });
-        return execFileSync(tool, [...args, file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
-    }
 }
 
 describe('signer.sign_zone accepted by BIND', () => {

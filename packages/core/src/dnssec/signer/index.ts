@@ -17,6 +17,8 @@ export {
 export { parse_bind_private } from './bind';
 export { DigestSHA256, DigestSHA384, root_anchors } from './ds';
 export { build_nsec } from './nsec';
+export { build_nsec3 } from './nsec3';
+export type { NSEC3Options } from './nsec3';
 export { rrsig_labels } from './names';
 export { sign_zone } from './sign';
 export type { SignOptions } from './sign';

@@ -67,7 +67,10 @@ export interface Hierarchy {
     leafUnsigned: Zone;
 }
 
-export function buildHierarchy(): Hierarchy {
+// buildHierarchy signs every zone with an NSEC3 chain of the given
+// parameters, or with NSEC when nsec3 is absent.
+export function buildHierarchy(nsec3?: signer.NSEC3Options): Hierarchy {
+    const opts = { inception, expiration, nsec3 };
     const [rootKSK, tldKSK, leafKSK, leafZSK] = hierarchyKeys.map((k) => fixedKey(k.owner, k.seed, k.flags));
     const root = readZone('. 86400 SOA a.root.test. hostmaster.root.test. 1 1800 900 604800 86400\n' +
         '. 86400 NS a.root.test.\n' +
@@ -86,9 +89,9 @@ ns.insecure A 192.0.2.54
     const leaf = readZone(leafText);
     const leafKeys = [leafKSK, leafZSK];
     return {
-        root: sign(root, '.', [rootKSK], inception, expiration),
-        tld: sign(tld, 'test.', [tldKSK], inception, expiration),
-        leaf: sign(leaf, 'example.test.', leafKeys, inception, expiration),
+        root: signer.sign_zone(root, '.', [rootKSK], opts),
+        tld: signer.sign_zone(tld, 'test.', [tldKSK], opts),
+        leaf: signer.sign_zone(leaf, 'example.test.', leafKeys, opts),
         rootKSK,
         leafKeys,
         leafUnsigned: leaf,

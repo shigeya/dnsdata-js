@@ -1,8 +1,10 @@
 // Shared fixtures for the zone signer specs (ports of the helpers in
 // dnsdata-go `dnssec/signer/{key,sign}_test.go`).
 
+import { execFileSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { DNSSecZone, KeyVerifyMode } from '../../../src/dnssec/dnssec_zone';
 import { RRSig } from '../../../src/dnssec/dnssec_rr';
@@ -117,4 +119,17 @@ export function findTool(name: string): string | null {
 
 export function stripBlanks(s: string): string {
     return s.split(/\s+/).join('');
+}
+
+// runOnZoneFile writes text to a temporary zone file and runs tool with
+// args followed by that file; throws when the tool exits non-zero.
+export function runOnZoneFile(text: string, tool: string, args: string[]): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'signer-bind-'));
+    const file = path.join(dir, 'example.test.zone');
+    try {
+        fs.writeFileSync(file, text + '\n', { mode: 0o600 });
+        return execFileSync(tool, [...args, file], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 }

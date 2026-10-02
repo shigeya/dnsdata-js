@@ -14,8 +14,8 @@ export const TYPE_DS = StringToRRType('DS');
 export const TYPE_RRSIG = StringToRRType('RRSIG');
 export const TYPE_NSEC = StringToRRType('NSEC');
 export const TYPE_DNSKEY = StringToRRType('DNSKEY');
-const TYPE_NSEC3 = StringToRRType('NSEC3');
-const TYPE_NSEC3PARAM = StringToRRType('NSEC3PARAM');
+export const TYPE_NSEC3 = StringToRRType('NSEC3');
+export const TYPE_NSEC3PARAM = StringToRRType('NSEC3PARAM');
 
 // Types produced by signing, dropped from the input before (re-)signing.
 const GENERATED_TYPES: ReadonlySet<number> = new Set([TYPE_RRSIG, TYPE_NSEC, TYPE_NSEC3, TYPE_NSEC3PARAM]);
@@ -94,14 +94,26 @@ export class ZoneView {
 
     // bitmap_text lists the types for owner's NSEC in presentation form.
     bitmap_text(owner: string): string {
-        const cut = this.is_cut(owner);
-        const present = new Set<number>([TYPE_RRSIG, TYPE_NSEC]);
-        for (const t of this.types_at(owner)) {
-            if (cut && t !== TYPE_NS && t !== TYPE_DS) continue;
-            present.add(t);
-        }
-        return [...present].sort((a, b) => a - b).map((t) => RRTypeName(t)).join(' ');
+        return type_names([...this.chain_types(owner), TYPE_RRSIG, TYPE_NSEC]);
     }
+
+    // chain_types returns the types at owner that a denial bitmap lists:
+    // at a delegation point only NS and DS.
+    chain_types(owner: string): number[] {
+        const cut = this.is_cut(owner);
+        return this.types_at(owner).filter((t) => !cut || t === TYPE_NS || t === TYPE_DS);
+    }
+
+    // is_signed reports whether owner has a signed RRset: any
+    // authoritative name does, a delegation point only with DS.
+    is_signed(owner: string): boolean {
+        return !this.is_cut(owner) || this.types_at(owner).includes(TYPE_DS);
+    }
+}
+
+// type_names returns ts sorted, once each, as space-separated mnemonics.
+export function type_names(ts: readonly number[]): string {
+    return [...new Set(ts)].sort((a, b) => a - b).map((t) => RRTypeName(t)).join(' ');
 }
 
 function canonical_records(z: Zone): ResourceRecord[] {
@@ -125,12 +137,17 @@ function canonical_records(z: Zone): ResourceRecord[] {
 export function build_nsec(z: Zone, apex: string, ttl = 0): ResourceRecord[] {
     register_handlers();
     const view = ZoneView.of(z, apex);
-    const nsec_ttl = ttl === 0 ? nsec_ttl_of(z, apex) : ttl;
+    const nsec_ttl = chain_ttl(z, apex, ttl);
     const owners = view.owners.filter((o) => !view.is_occluded(o));
     return owners.map((owner, i) => {
         const next = i + 1 < owners.length ? owners[i + 1] : apex;
         return new ResourceRecord(owner, nsec_ttl, 'IN', TYPE_NSEC, `${next} ${view.bitmap_text(owner)}`);
     });
+}
+
+// chain_ttl is ttl, or for 0 the RFC 9077 TTL of nsec_ttl_of.
+export function chain_ttl(z: Zone, apex: string, ttl: number): number {
+    return ttl === 0 ? nsec_ttl_of(z, apex) : ttl;
 }
 
 // soa_at returns the apex SOA record, or null.

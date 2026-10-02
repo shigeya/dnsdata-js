@@ -5,14 +5,14 @@
 // It answers the queries a validating resolver makes (answers with
 // their RRSIGs, DNSKEY at each apex, DS from the parent side of a zone
 // cut, referrals for delegations it does not hold, NODATA and NXDOMAIN
-// with their NSEC proofs, CNAME, DNAME and wildcard synthesis) without
-// any network. Together with the zone signer it lets a whole hierarchy,
+// with their NSEC or NSEC3 proofs (RFC 5155 §7.2, opt-out included),
+// CNAME, DNAME and wildcard synthesis) without any network. Together with the zone signer it lets a whole hierarchy,
 // including a private root, be built and validated in a test: the
 // verifier's `trustAnchors` option takes the root's anchors from
 // `signer.root_anchors`, and its `now` option pins the time.
 //
 // An [Authority] is immutable after [new_authority]; every response
-// carries fresh copies of the records. NSEC3 proofs are not generated.
+// carries fresh copies of the records.
 
 import { Resolver } from '../../verifier/resolver';
 import { Zone } from '../../zone/dns_zone';
