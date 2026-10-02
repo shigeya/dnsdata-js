@@ -19,8 +19,20 @@ describe('@dnsdata/core entry point', () => {
         'registerAllHandlers',
         'signer',
         'memory',
+        'parse_message',
+        'rdata_to_string',
+        'Header',
     ])('exports %s', (name) => {
         expect((core as Record<string, unknown>)[name]).toBeDefined();
+    });
+
+    it('parses a message and presents its RDATA from entry-point names alone', () => {
+        const query = core.build_query_with_id(0x1234, 'example.com.', 1);
+        const msg: core.RawMessage = core.parse_message(query);
+        expect(msg.header.id).toBe(0x1234);
+        expect(msg.question.name).toBe('example.com.');
+        const a = Uint8Array.of(192, 0, 2, 1);
+        expect(core.rdata_to_string(a, 1, a, 0)).toBe('192.0.2.1');
     });
 
     it('builds a Verifier from entry-point types alone', () => {

@@ -32,7 +32,10 @@ export * from './types/dns_type_table';
 export * from './types/algorithm';
 export * from './wire/dns_wire';
 export * from './wire/dns_wire_util';
-export { format_generic_rdata } from './wire/rdata_decoder';
+export { format_generic_rdata, rdata_to_string } from './wire/rdata_decoder';
+// The DNS message parser (dnsdata-go wire.ParseMessage, UP-002).
+export { parse_message, Header } from './wire/dns_message';
+export type { Question, RawRR, RawMessage } from './wire/dns_message';
 export * from './zone/dns_zone';
 export { parse_generic_rdata } from './zone/generic';
 export { compare_canonical_names } from './zone/canonical';

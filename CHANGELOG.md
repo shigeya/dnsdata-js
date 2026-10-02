@@ -14,6 +14,12 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Added
+
+- The package entry point exports the DNS message parser and the
+  RDATA presentation decoder: `parse_message`, `Header`, the
+  `Question` / `RawRR` / `RawMessage` types, and `rdata_to_string`.
+
 ### Changed
 
 - TXT character-strings and the CAA value use RFC 1035 §5.1 escapes in
