@@ -90,6 +90,18 @@ describe('DoHClient transport', () => {
         return s;
     }
 
+    // checking_disabled sets the CD bit on the POSTed query; clear by default.
+    test.each([false, true])('checking_disabled=%s reaches the wire', async (cd) => {
+        let flags = -1;
+        const srv = track(await start_server((req, res, body) => {
+            flags = body.readUInt16BE(2);
+            ok_handler(req, res);
+        }));
+        const c = new DoHClient({ providers: [srv.url], timeout_ms: 2000, ...(cd ? { checking_disabled: true } : {}) });
+        await c.query('example.com.', TYPE_A);
+        expect((flags & 0x0010) !== 0).toBe(cd);
+    });
+
     test('query returns response bytes from a successful provider', async () => {
         const srv = track(await start_server(ok_handler));
         const c = new DoHClient({ providers: [srv.url], timeout_ms: 2000 });

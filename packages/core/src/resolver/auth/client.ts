@@ -24,7 +24,7 @@
 
 import * as dgram from 'dgram';
 import * as net from 'net';
-import { build_query_with_id, random_query_id } from '../../wire/dns_wire';
+import { build_query_with_options, random_query_id, QueryOptions } from '../../wire/dns_wire';
 import {
     AuthAbortedError,
     AuthAllServersFailedError,
@@ -361,6 +361,11 @@ export interface AuthClientOptions {
     // Dialer for tests; defaults to the Node.js dgram/net-backed
     // implementation.
     dialer?: Dialer;
+
+    // Sets the CD bit on every query (RFC 4035 §3.2.2), so a validating
+    // server returns data it would reject as bogus instead of SERVFAIL.
+    // Default false. Mirrors dnsdata-go `auth.WithCheckingDisabled`.
+    checking_disabled?: boolean;
 }
 
 export interface AuthQueryOptions {
@@ -384,8 +389,10 @@ export class AuthClient {
     private readonly _timeout_ms: number;
     private readonly _udp_buffer_size: number;
     private readonly _dialer: Dialer;
+    private readonly _query_opts: QueryOptions;
 
     public constructor(opts: AuthClientOptions = {}) {
+        this._query_opts = { checking_disabled: opts.checking_disabled ?? false };
         const raw_servers = opts.servers ?? [];
         this._servers = raw_servers.map(normalize_addr);
         this._timeout_ms = opts.timeout_ms ?? AUTH_DEFAULT_TIMEOUT_MS;
@@ -408,7 +415,7 @@ export class AuthClient {
     // AuthAllServersFailedError if every server failed.
     public async query(qname: string, qtype: number, opts: AuthQueryOptions = {}): Promise<Uint8Array> {
         const id = random_query_id();
-        const msg = build_query_with_id(id, qname, qtype);
+        const msg = build_query_with_options(id, qname, qtype, this._query_opts);
         return this.query_raw(id, msg, opts);
     }
 

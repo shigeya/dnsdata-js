@@ -6,13 +6,30 @@ import {
     parse_domain_name,
     build_query,
     build_query_with_id,
+    build_query_with_options,
     random_query_id,
+    FLAG_CD,
 } from "../../src/wire/dns_wire";
 import {
     DNSWireError,
     DNSWirePointerLoopError,
     DNSWirePointerForwardError,
 } from "../../src/dns_exception";
+
+// Same cases as dnsdata-go TestBuildQueryWithOptions_CD: checking_disabled
+// sets the CD bit (RFC 4035 §3.2.2) and nothing else.
+describe("build_query_with_options", () => {
+    const FLAG_RD = 0x0100;
+    const plain = build_query_with_id(0x1234, "example.com.", 1);
+    it.each([false, true])("checking_disabled=%s", (cd) => {
+        const q = build_query_with_options(0x1234, "example.com.", 1, { checking_disabled: cd });
+        expect((q[2] << 8) | q[3]).toBe(cd ? FLAG_RD | FLAG_CD : FLAG_RD);
+        expect(Array.from(q.subarray(4))).toEqual(Array.from(plain.subarray(4)));
+    });
+    it("FLAG_CD is 0x0010", () => {
+        expect(FLAG_CD).toBe(0x0010);
+    });
+});
 
 describe("Domain name wire format conversion library", () => {
     const test_vector: Array<[string, Uint8Array]> = [

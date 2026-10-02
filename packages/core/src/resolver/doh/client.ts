@@ -18,7 +18,7 @@
 // stdout / stderr. All filesystem and logging concerns are the
 // caller's responsibility.
 
-import { build_query } from '../../wire/dns_wire';
+import { build_query_with_options, random_query_id, QueryOptions } from '../../wire/dns_wire';
 import {
     DoHAllProvidersFailedError,
     DoHError,
@@ -77,6 +77,11 @@ export interface DoHClientOptions {
     // the global `fetch` (Node ≥ 18, browsers). Throws at construction
     // time if no fetch is available and none is supplied.
     fetch_fn?: FetchFn;
+
+    // Sets the CD bit on every query (RFC 4035 §3.2.2), so a validating
+    // provider returns data it would reject as bogus instead of
+    // SERVFAIL. Default false. Mirrors dnsdata-go `doh.WithCheckingDisabled`.
+    checking_disabled?: boolean;
 }
 
 export interface DoHQueryOptions {
@@ -98,8 +103,10 @@ export class DoHClient {
     private readonly _timeout_ms: number;
     private readonly _user_agent: string;
     private readonly _fetch: FetchFn;
+    private readonly _query_opts: QueryOptions;
 
     public constructor(opts: DoHClientOptions = {}) {
+        this._query_opts = { checking_disabled: opts.checking_disabled ?? false };
         const raw = opts.providers ?? [];
         this._providers = raw.length === 0
             ? default_providers()
@@ -129,7 +136,7 @@ export class DoHClient {
     // Throws DoHNoProvidersError if no providers are configured, and
     // DoHAllProvidersFailedError if every provider failed.
     public async query(qname: string, qtype: number, opts: DoHQueryOptions = {}): Promise<Uint8Array> {
-        const q = build_query(qname, qtype);
+        const q = build_query_with_options(random_query_id(), qname, qtype, this._query_opts);
         return this.query_raw(q, opts);
     }
 

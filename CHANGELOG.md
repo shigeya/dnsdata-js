@@ -19,6 +19,12 @@ version?" question answerable at a glance.
 - The package entry point exports the DNS message parser and the
   RDATA presentation decoder: `parse_message`, `Header`, the
   `Question` / `RawRR` / `RawMessage` types, and `rdata_to_string`.
+- `FLAG_CD`, `QueryOptions` and `build_query_with_options`: a query with
+  the CD (checking disabled) bit, RFC 4035 §3.2.2. `checking_disabled`
+  on `DoHClientOptions` and `AuthClientOptions` sets it on every query,
+  so a validating upstream returns data it would reject as bogus
+  instead of SERVFAIL. Off by default; queries are unchanged. Ports
+  dnsdata-go's `WithCheckingDisabled`.
 
 ### Changed
 

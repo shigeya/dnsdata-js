@@ -183,6 +183,20 @@ function assemble_name(labels: string[]): string {
 // field.
 const FLAG_RD = 0x0100;
 
+// The "checking disabled" header bit (RFC 4035 §3.2.2). Mirrors
+// dnsdata-go `wire.FlagCD`.
+export const FLAG_CD = 0x0010;
+
+// QueryOptions adjusts the query build_query_with_options builds. The
+// empty object builds what build_query_with_id does. Mirrors dnsdata-go
+// `wire.QueryOptions`.
+export interface QueryOptions {
+    // Sets the CD bit, asking a validating upstream to return data it
+    // would reject as bogus instead of SERVFAIL, so the caller can
+    // validate it itself.
+    checking_disabled?: boolean;
+}
+
 // OPT pseudo-RR constants for the EDNS(0) record built into every
 // query. Mirrors dnsdata-go wire/query.go so DoH and plain DNS share
 // the same query shape.
@@ -224,7 +238,14 @@ export function build_query(qname: string, qtype: number): Uint8Array {
 // tests and protocols that need to correlate a specific transaction
 // ID with a response set it explicitly.
 export function build_query_with_id(id: number, qname: string, qtype: number): Uint8Array {
+    return build_query_with_options(id, qname, qtype, {});
+}
+
+// build_query_with_options is build_query_with_id with header options.
+// Ports the dnsdata-go `wire.BuildQueryWithOptions` function.
+export function build_query_with_options(id: number, qname: string, qtype: number, opts: QueryOptions): Uint8Array {
     const name_wire = domain_name2wire(ensure_fqdn(qname));
+    const flags = opts.checking_disabled ? FLAG_RD | FLAG_CD : FLAG_RD;
 
     // Header (12 bytes): id, flags, qd=1, an=0, ns=0, ar=1 (the OPT).
     // Question (name + qtype + qclass): name_wire.length + 4.
@@ -233,7 +254,7 @@ export function build_query_with_id(id: number, qname: string, qtype: number): U
     const view = new DataView(buf.buffer);
     let p = 0;
     view.setUint16(p, id);          p += 2;
-    view.setUint16(p, FLAG_RD);     p += 2;
+    view.setUint16(p, flags);       p += 2;
     view.setUint16(p, 1);           p += 2; // QDCOUNT
     view.setUint16(p, 0);           p += 2; // ANCOUNT
     view.setUint16(p, 0);           p += 2; // NSCOUNT

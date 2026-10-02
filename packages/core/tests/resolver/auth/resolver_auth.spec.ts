@@ -212,6 +212,22 @@ describe("AuthClient (UP-003)", () => {
         await expect(c.query("example.com.", TYPE_A)).rejects.toBeInstanceOf(AuthNoServersError);
     });
 
+    // checking_disabled sets the CD bit on the query; clear by default.
+    it.each([false, true])("checking_disabled=%s reaches the wire", async (cd) => {
+        let flags = -1;
+        const server = await start_udp_listener((q) => {
+            flags = (q[2] << 8) | q[3];
+            return build_response_to(q, "example.com.", TYPE_A, 300, new Uint8Array([192, 0, 2, 1]), false);
+        });
+        try {
+            const c = new AuthClient({ servers: [server.addr], timeout_ms: 500, ...(cd ? { checking_disabled: true } : {}) });
+            await c.query("example.com.", TYPE_A);
+            expect((flags & 0x0010) !== 0).toBe(cd);
+        } finally {
+            server.close();
+        }
+    });
+
     it("returns a response over UDP on the happy path", async () => {
         const server = await start_udp_listener((q) =>
             build_response_to(q, "example.com.", TYPE_A, 300, new Uint8Array([192, 0, 2, 1]), false),
