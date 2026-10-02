@@ -27,13 +27,14 @@ import {
 } from './verifier';
 import { try_cname, try_dname } from './alias';
 import { prove_no_ds } from './negative';
-import { prove_no_data, prove_nx_domain } from './leaf_negative';
+import { ancestors_of, prove_no_data, prove_nx_domain } from './leaf_negative';
 import { detect_wildcard, prove_qname_non_existence } from './wildcard';
 import { build_answer } from './answer';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS     = StringToRRType('DS');
 const TYPE_RRSIG  = StringToRRType('RRSIG');
+const TYPE_DNAME  = StringToRRType('DNAME');
 
 // Walks the DNSSEC chain of trust from the root zone down to
 // (qname, qtype), chasing CNAME / DNAME redirections up to
@@ -164,6 +165,10 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
 
         const dsCount = await load_records(v, currentZone, childName, TYPE_DS, result, signal);
         if (dsCount === 0) {
+            // A name below a DNAME is never a zone cut (RFC 6672 §2.4),
+            // and denial records for the DNAME owner say nothing about
+            // it (RFC 6840 §4.1). Leaf resolution follows the DNAME.
+            if (below_dname(currentZone, childName)) continue;
             // Before treating childName as a non-cut, see whether
             // the resolver also handed us NSEC / NSEC3 records that
             // prove no DS exists at childName (RFC 4035 §5.4 /
@@ -507,6 +512,14 @@ function ds_digest_algorithm(digestType: number): string | null {
         case 4: return 'sha384';
         default: return null;
     }
+}
+
+// below_dname reports whether z holds a DNAME at a proper ancestor of
+// name. Whether it verifies is left to leaf resolution: skipping a
+// no-DS proof can only make the verdict stricter.
+function below_dname(z: DNSSecZone, name: string): boolean {
+    return ancestors_of(name).some((anc) =>
+        !equal_canonical_names(anc, name) && z.find_rrset(anc, TYPE_DNAME).length > 0);
 }
 
 // zone_already_in_chain reports whether result.chain already contains
