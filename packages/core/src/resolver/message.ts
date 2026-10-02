@@ -4,7 +4,7 @@
 
 import { parse_message, RawRR } from '../wire/dns_message';
 import { rdata_to_string } from '../wire/rdata_decoder';
-import { ResourceRecord, ns_class, ns_type } from '../zone/dns_zone';
+import { ResourceRecord, new_resource_record_with_rdata, ns_class, ns_type } from '../zone/dns_zone';
 import { RRClassName, RRTypeName } from '../types/dns_type_table';
 import { ResolverResponse } from './response';
 
@@ -38,8 +38,11 @@ function to_record(raw: Uint8Array, rr: RawRR, fail: ResponseErrorFactory): Reso
     } catch (err) {
         throw fail('rdata decode', error_message(err));
     }
+    // The RDATA octets ride along so the record encodes for signature
+    // checks even when no handler is registered for its type.
     try {
-        return new ResourceRecord(rr.name, rr.ttl, RRClassName(rr.class as ns_class), RRTypeName(rr.type as ns_type), value);
+        return new_resource_record_with_rdata(rr.name, rr.ttl, RRClassName(rr.class as ns_class),
+            RRTypeName(rr.type as ns_type), value, rr.rdata);
     } catch (err) {
         throw fail('construct record', error_message(err));
     }

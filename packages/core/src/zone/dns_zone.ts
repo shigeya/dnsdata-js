@@ -215,13 +215,20 @@ export class ResourceRecord {
     readonly type: ns_type;
     readonly value: string;
     private handler: ResourceRecordHandler | null = null;
+    // The RDATA as received; see new_resource_record_with_rdata.
+    private readonly received_rdata: Uint8Array | null;
 
-    constructor(label: string, ttl: number, rrclass: string | ns_class, type: string | ns_type, value: string) {
+    // rdata, when given, is the RDATA the record was read off the wire
+    // as (copied); get_wire_body falls back to it. Prefer
+    // new_resource_record_with_rdata, which checks its length.
+    constructor(label: string, ttl: number, rrclass: string | ns_class, type: string | ns_type, value: string,
+                rdata?: Uint8Array) {
         this.label = label;
         this.ttl = ttl;
         this.rrclass = typeof rrclass === 'string' ? StringToRRClass(rrclass) : rrclass;
         this.type = typeof type === 'string' ? StringToRRType(type) : type;
         this.value = value;
+        this.received_rdata = rdata === undefined ? null : Uint8Array.from(rdata);
     }
 
     // A value in RFC 3597 generic form (`\# <len> <hex>`) is decoded from
@@ -304,6 +311,14 @@ export class ResourceRecord {
     // ahead of any handler, so its octets (and hence its canonical form)
     // never pass through a re-encoding. Malformed generic RDATA throws
     // DNSZonePresentationFormatError.
+    //
+    // For types without a built-in or registered encoder, a record built
+    // with new_resource_record_with_rdata writes the octets it was
+    // received as; any other record writes nothing. The fallback serves
+    // the types whose RDATA holds no compressible or case-folded names
+    // (TLSA, SMIMEA, SVCB, HTTPS, ...), so the received octets are their
+    // canonical form (RFC 4034 §6.2, RFC 3597 §4); the types that hold
+    // such names have built-in encoders.
     get_wire_body(builder: WireBuilder): void {
         const raw = this.generic_rdata();
         if (raw !== null) {
@@ -333,7 +348,12 @@ export class ResourceRecord {
         case 28 /*AAAA*/:   this._wire_body_aaaa(builder); break;
         case 33 /*SRV*/:    this._wire_body_srv(builder); break;
         case 257 /*CAA*/:   this._wire_body_caa(builder); break;
-        default: break;
+        default:
+            if (this.received_rdata !== null) {
+                builder.append_uint16(this.received_rdata.length);
+                builder.append_bytes(this.received_rdata);
+            }
+            break;
         }
     }
 
@@ -459,6 +479,22 @@ export function new_resource_record_from_rdata(label: string, ttl: number, rrcla
         throw new DNSZoneRDataFormatError(`RDATA length ${rdata.length}`);
     }
     return new ResourceRecord(label, ttl, rrclass, type, format_generic_rdata(rdata));
+}
+
+// new_resource_record_with_rdata builds a record read off the wire: value
+// is its presentation form and rdata the RDATA octets it was decoded
+// from. get_wire_body writes rdata when no handler or built-in encoder is
+// available for the type, so a received record still encodes (and its
+// RRSIG verifies) without the zone handlers registered. rdata is copied.
+// Throws DNSZoneRDataFormatError when rdata exceeds 65535 octets.
+// Ports dnsdata-go `zone.NewResourceRecordWithRData`.
+export function new_resource_record_with_rdata(label: string, ttl: number, rrclass: string | ns_class,
+                                               type: string | ns_type, value: string,
+                                               rdata: Uint8Array): ResourceRecord {
+    if (rdata.length > MAX_RDATA_LENGTH) {
+        throw new DNSZoneRDataFormatError(`RDATA length ${rdata.length}`);
+    }
+    return new ResourceRecord(label, ttl, rrclass, type, value, rdata);
 }
 
 // canonical_rdata returns the RDATA octets of rr (without RDLENGTH), as

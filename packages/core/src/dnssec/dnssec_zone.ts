@@ -25,6 +25,17 @@ export enum KeyVerifyMode {
 const RDLENGTH_OCTETS = 2;
 const MILLISECONDS_PER_SECOND = 1000;
 
+// The types register_dnssec_handlers installs.
+const DNSSEC_HANDLER_TYPES: ReadonlySet<number> = new Set(
+    ['DNSKEY', 'CDNSKEY', 'RRSIG', 'DS', 'CDS', 'NSEC', 'NSEC3', 'NSEC3PARAM'].map((t) => StringToRRType(t)));
+
+// registration_for names the call that registers an encoder for type.
+function registration_for(type: number): string {
+    return DNSSEC_HANDLER_TYPES.has(type)
+        ? 'register_dnssec_handlers()'
+        : 'registerAllHandlers() or register_legacy_handlers()';
+}
+
 export class DNSSecZone extends Zone {
     private seps: string[] = [];
     private _parent: DNSSecZone | null = null;
@@ -127,7 +138,8 @@ export class DNSSecZone extends Zone {
             const body = body_builder.build();
             if (body.length < RDLENGTH_OCTETS) {
                 throw new DNSZoneRDataFormatError(
-                    `no encoder for ${rr.label} ${RRTypeName(rr.type)}`);
+                    `no encoder for ${rr.label} ${RRTypeName(rr.type)} (call ${registration_for(rr.type)}, ` +
+                    'or keep the received RDATA with new_resource_record_with_rdata)');
             }
             bodies.push(body);
         }

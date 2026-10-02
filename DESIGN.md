@@ -58,8 +58,12 @@ its barrel re-exports. RR handler installation is **opt-in**: importing
 the entry point does NOT register anything. Callers invoke
 `registerAllHandlers()` (or the per-package `register_dnssec_handlers`
 / `register_legacy_handlers` helpers) once at startup before
-`DNSSecZone` signature checks run. The `Verifier` constructor installs
-both itself, as dnsdata-go's `NewVerifier` does.
+`DNSSecZone` signature checks or `Verifier.validate()` run. The
+`Verifier` constructor installs nothing. Records the resolver clients
+build keep the RDATA octets they received
+(`new_resource_record_with_rdata`), so a TLSA, SMIMEA, SVCB or HTTPS
+answer verifies without the zone handlers; the DNSSEC handlers are
+still the caller's to register.
 
 ## 3. Public API
 
@@ -216,9 +220,8 @@ Idiom mapping applied:
     the handler registry. RR handler installation is opt-in via
     `registerAllHandlers()` (or `register_dnssec_handlers` /
     `register_legacy_handlers`); no module registers anything at
-    import time. As on the Go side, `new Verifier(...)`,
-    `signer.sign_zone` and `signer.build_nsec` install the handlers
-    they need when called.
+    import time. As on the Go side, `signer.sign_zone` /
+    `signer.build_nsec` install the handlers they need when called.
 22. Hold module-global state visible across `Verifier` instances.
     Multiple `Verifier`s must be independently configurable and
     independently cancellable.

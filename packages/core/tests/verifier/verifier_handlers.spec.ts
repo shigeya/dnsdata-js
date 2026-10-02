@@ -1,33 +1,44 @@
-// Ports dnsdata-go `verifier/handlers_test.go`
-// (TestNewVerifier_EncodesZoneHandlerTypes).
+// Ports dnsdata-go `verifier/handlers_test.go`.
 //
 // tests/testdata/handlers holds a signed root zone, shared byte for byte
-// with dnsdata-go, whose answers (TLSA, SMIMEA, SVCB, HTTPS) only the
-// zone handlers encode. It is read from a file, not signed in-process,
-// because the signer registers every handler and would hide a missing
-// registration. tests/jest.setup.ts registers every handler too, so the
-// modules are loaded afresh in an isolated registry where nothing is
-// registered: the Verifier constructor must register what it needs.
+// with dnsdata-go, whose TLSA, SMIMEA, SVCB and HTTPS records are written
+// in RFC 3597 generic form, so that the UDP server here sends their
+// octets without the zone handlers. The auth client presents them by
+// type, which only the zone handlers encode. tests/jest.setup.ts
+// registers every handler, so the modules are loaded afresh in an
+// isolated registry where only what each test registers exists.
 
+import * as dgram from 'dgram';
 import * as fs from 'fs';
 import * as path from 'path';
+import type * as HandlersModule from '../../src/dnssec/handlers';
 import type * as RootAnchorsModule from '../../src/dnssec/root_anchors';
+import type * as AuthModule from '../../src/resolver/auth';
 import type * as MemoryModule from '../../src/resolver/memory';
 import type * as VerdictModule from '../../src/verifier/verdict';
 import type * as VerifierModule from '../../src/verifier/verifier';
+import type * as MessageModule from '../../src/wire/dns_message';
+import type * as WireModule from '../../src/wire/dns_wire';
+import type * as WireUtilModule from '../../src/wire/dns_wire_util';
 import type * as ZoneModule from '../../src/zone/dns_zone';
 
 const handlersDir = path.join(__dirname, '..', 'testdata', 'handlers');
+const clock = new Date('2026-06-01T00:00:00Z');
 
 function read(name: string): string {
     return fs.readFileSync(path.join(handlersDir, name), 'utf8');
 }
 
 interface Isolated {
+    handlers: typeof HandlersModule;
     anchors: typeof RootAnchorsModule;
+    auth: typeof AuthModule;
     memory: typeof MemoryModule;
     verdict: typeof VerdictModule;
     verifier: typeof VerifierModule;
+    message: typeof MessageModule;
+    wire: typeof WireModule;
+    wireUtil: typeof WireUtilModule;
     zone: typeof ZoneModule;
 }
 
@@ -35,10 +46,15 @@ function loadIsolated(): Isolated {
     let mods: Isolated | undefined;
     jest.isolateModules(() => {
         mods = {
+            handlers: require('../../src/dnssec/handlers'),
             anchors: require('../../src/dnssec/root_anchors'),
+            auth: require('../../src/resolver/auth'),
             memory: require('../../src/resolver/memory'),
             verdict: require('../../src/verifier/verdict'),
             verifier: require('../../src/verifier/verifier'),
+            message: require('../../src/wire/dns_message'),
+            wire: require('../../src/wire/dns_wire'),
+            wireUtil: require('../../src/wire/dns_wire_util'),
             zone: require('../../src/zone/dns_zone'),
         };
     });
@@ -46,28 +62,91 @@ function loadIsolated(): Isolated {
     return mods;
 }
 
+// answer_query builds the wire response of authority to query. The
+// generic-form records go out as their octets; the DNSSEC records use
+// the DNSSEC handlers the test registered.
+async function answer_query(m: Isolated, authority: MemoryModule.Authority, query: Uint8Array): Promise<Uint8Array> {
+    const q = m.message.parse_message(query).question;
+    const resp = await authority.query(q.name, q.type);
+    const b = new m.wireUtil.WireBuilder();
+    b.append_uint16((query[0] << 8) | query[1]);
+    b.append_uint16(0x8400 | resp.rcode); // QR, AA
+    b.append_uint16(1);
+    b.append_uint16(resp.records.length); // every record in the answer section
+    b.append_uint16(0);
+    b.append_uint16(0);
+    b.append_bytes(m.wire.domain_name2wire(q.name));
+    b.append_uint16(q.type);
+    b.append_uint16(q.class);
+    for (const rr of resp.records) {
+        rr.get_wire_header(b);
+        b.append_uint32(rr.ttl);
+        rr.get_wire_body(b);
+    }
+    return b.build();
+}
+
+function serve_udp(m: Isolated, authority: MemoryModule.Authority): Promise<{ addr: string; close: () => void }> {
+    return new Promise((resolve, reject) => {
+        const socket = dgram.createSocket('udp4');
+        socket.once('error', reject);
+        socket.on('message', (msg, rinfo) => {
+            void answer_query(m, authority, new Uint8Array(msg)).then((resp) => socket.send(resp, rinfo.port, rinfo.address));
+        });
+        socket.once('listening', () => {
+            const a = socket.address();
+            resolve({ addr: `${a.address}:${a.port}`, close: () => socket.close() });
+        });
+        socket.bind(0, '127.0.0.1');
+    });
+}
+
+function read_zone(m: Isolated, text: string): ZoneModule.Zone {
+    const z = new m.zone.Zone();
+    z.read_string(text);
+    return z;
+}
+
 describe('answers that need the zone handlers (testdata/handlers)', () => {
     const m = loadIsolated();
-    const z = new m.zone.Zone();
-    z.read_string(read('root.zone'));
-    const auth = m.memory.new_authority(m.memory.with_zone('.', z));
     const anchors = m.anchors.parseRootAnchors(read('root-anchors.json'));
-    const clock = new Date('2026-06-01T00:00:00Z');
+    const authority = m.memory.new_authority(m.memory.with_zone('.', read_zone(m, read('root.zone'))));
+    let server: { addr: string; close: () => void };
 
-    it('starts with no zone handler registered', () => {
-        expect([52, 53, 64, 65].map((t) => m.zone.has_encoder(t))).toEqual([false, false, false, false]);
+    beforeAll(async () => {
+        server = await serve_udp(m, authority);
+    });
+    afterAll(() => server.close());
+
+    it('the constructor registers no handler', () => {
+        new m.verifier.Verifier({ resolver: authority, trustAnchors: anchors });
+        expect([48, 46, 52, 53, 64, 65].map((t) => m.zone.has_encoder(t))).toEqual([false, false, false, false, false, false]);
     });
 
     it.each([
-        ['svc.example.test.', 64],
-        ['www.example.test.', 65],
-        ['_443._tcp.www.example.test.', 52],
-        ['x._smimecert.example.test.', 53],
-    ] as const)('%s/%d is secure', async (qname, qtype) => {
-        const v = new m.verifier.Verifier({ resolver: auth, trustAnchors: anchors, now: () => clock });
+        ['svc.example.test.', 64, '1 target.example.'],
+        ['www.example.test.', 65, '1 . alpn=h2'],
+        ['_443._tcp.www.example.test.', 52, '3 1 1 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'],
+        ['x._smimecert.example.test.', 53, '3 0 1 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'],
+    ] as const)('%s/%d received over UDP is secure with only the DNSSEC handlers', async (qname, qtype, value) => {
+        m.handlers.register_dnssec_handlers();
+        const client = new m.auth.AuthClient({ servers: [server.addr], timeout_ms: 2000 });
+        const resolver = { query: (name: string, t: number, signal?: AbortSignal) => client.resolve(name, t, signal) };
+        const v = new m.verifier.Verifier({ resolver, trustAnchors: anchors, now: () => clock });
         const res = await v.validate(qname, qtype);
         expect(`${res.verdict} ${res.bogusReason ?? ''}`).toBe(`${m.verdict.Verdict.Secure} `);
-        expect(res.answer?.type).toBe(qtype);
-        expect(res.answer?.records).toHaveLength(1);
+        expect(res.answer?.records.map((r) => r.value)).toEqual([value]);
+        expect([52, 53, 64, 65].map((t) => m.zone.has_encoder(t))).toEqual([false, false, false, false]);
+    });
+
+    // A record held in presentation form without its octets (a cache
+    // that rebuilt it) fails with an error naming the registration.
+    it('a record without an encoder names the registration it needs', async () => {
+        m.handlers.register_dnssec_handlers();
+        const text = read('root.zone').split('\n').map((line) =>
+            line.startsWith('svc.example.test. 3600 IN SVCB ') ? 'svc.example.test. 3600 IN SVCB 1 target.example.' : line).join('\n');
+        const presented = m.memory.new_authority(m.memory.with_zone('.', read_zone(m, text)));
+        const v = new m.verifier.Verifier({ resolver: presented, trustAnchors: anchors, now: () => clock });
+        await expect(v.validate('svc.example.test.', 64)).rejects.toThrow(/register_legacy_handlers/);
     });
 });

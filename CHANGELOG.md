@@ -16,6 +16,12 @@ version?" question answerable at a glance.
 
 ### Added
 
+- `new_resource_record_with_rdata` (and an optional `rdata` argument
+  on the `ResourceRecord` constructor): a record with its presentation
+  value and the RDATA octets it was received as. `get_wire_body` writes
+  those octets when no handler or built-in encoder exists for the type.
+  The DoH / auth / DoT clients build their records with it. Ports
+  dnsdata-go's `zone.NewResourceRecordWithRData`.
 - The package entry point exports the DNS message parser and the
   RDATA presentation decoder: `parse_message`, `Header`, the
   `Question` / `RawRR` / `RawMessage` types, and `rdata_to_string`.
@@ -110,13 +116,16 @@ version?" question answerable at a glance.
   octet; the presentation now reads back to the same octets. Other
   octets are presented as before. New shared vector
   "TXT UTF-8 with BOM".
-- The `Verifier` constructor registers the DNSSEC and zone handlers,
-  as `registerAllHandlers()` and dnsdata-go's `NewVerifier` do. A
-  caller that registered only the DNSSEC handlers could not validate a
-  TLSA, SMIMEA, SVCB or HTTPS answer received in presentation form,
-  which the DoH / auth / DoT clients produce since TLSA / SVCB RDATA is
-  presented by type; one that registered nothing got no verdict but
-  Bogus. Shared vector `tests/testdata/handlers`.
+- TLSA, SMIMEA, SVCB and HTTPS answers from the DoH / auth / DoT
+  clients validate with only the DNSSEC handlers registered. Since that
+  RDATA is presented by type, only the zone handlers could encode it
+  back for the RRSIG check, and validation threw "no encoder". The
+  clients now keep the received octets on the record
+  (`new_resource_record_with_rdata`), and `get_wire_body` writes them
+  when no handler or built-in encoder exists for the type. The
+  `Verifier` constructor registers nothing. A record that still has no
+  encoder fails with an error naming the registration it needs. Shared
+  vector `tests/testdata/handlers`, served over UDP.
 - A name below a DNAME in a zone signed with opt-out NSEC3 follows the
   DNAME. The walker asked for DS at every ancestor of the query name
   and took an opt-out NSEC3 that happened to cover the name's hash
