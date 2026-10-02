@@ -26,6 +26,8 @@
 
 import { RRTypeToString } from '../types/dns_type_table';
 import { BUILTIN_ROOT_ANCHORS, RootAnchors } from '../dnssec/root_anchors';
+import { register_dnssec_handlers } from '../dnssec/handlers';
+import { register_legacy_handlers } from '../zone/handlers';
 import { Resolver } from './resolver';
 import { Result } from './result';
 import { Cache } from './cache';
@@ -74,12 +76,15 @@ export class Verifier {
         this.anchors = opts.trustAnchors ?? BUILTIN_ROOT_ANCHORS;
         this.now = opts.now ?? (() => new Date());
         if (opts.cache != null) this.cache = opts.cache;
-        // The constructor does not register RR handlers, and no module
-        // registers them at import time: the caller runs
-        // registerAllHandlers() (or register_dnssec_handlers()) once
-        // before validate(), or the DNSKEY / DS / RRSIG / NSEC records
-        // do not decode and nothing verifies. The Go side's
-        // `NewVerifier` calls `RegisterHandlers()` itself.
+        // As a deliberate constructor-time side effect (no module
+        // registers anything at import time), register the bundled RR
+        // handlers, as registerAllHandlers() does and as dnsdata-go's
+        // `NewVerifier` does: the DNSSEC records themselves, and every
+        // answer whose presentation form only a zone handler encodes
+        // (TLSA, SMIMEA, SVCB, HTTPS, ...), whose RRSIG cannot be
+        // checked otherwise.
+        register_dnssec_handlers();
+        register_legacy_handlers();
     }
 
     // Walks the DNSSEC chain of trust from the root zone down to

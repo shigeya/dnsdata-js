@@ -110,6 +110,13 @@ version?" question answerable at a glance.
   octet; the presentation now reads back to the same octets. Other
   octets are presented as before. New shared vector
   "TXT UTF-8 with BOM".
+- The `Verifier` constructor registers the DNSSEC and zone handlers,
+  as `registerAllHandlers()` and dnsdata-go's `NewVerifier` do. A
+  caller that registered only the DNSSEC handlers could not validate a
+  TLSA, SMIMEA, SVCB or HTTPS answer received in presentation form,
+  which the DoH / auth / DoT clients produce since TLSA / SVCB RDATA is
+  presented by type; one that registered nothing got no verdict but
+  Bogus. Shared vector `tests/testdata/handlers`.
 
 ## [0.7.0] — 2026-09-24
 
