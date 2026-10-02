@@ -14,6 +14,20 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-03
+
+Coordinated release with dnsdata-go v0.8.0 (port-back of UP-016 –
+UP-019 and UF-007). Transports and signing: a DNS-over-TLS client, the
+CD bit on queries, NSEC3 signing with NSEC3 proofs from the memory
+authority, and the message parser and RDATA decoder exported from the
+entry point. No API is removed, but presentation and verdicts change:
+TLSA / SMIMEA / SVCB / HTTPS RDATA is presented by type instead of
+`\#`, TXT and CAA use `\DDD` escapes and present UTF-8 as text, and
+alias and negative-proof fixes change the verdict of DNAME answers,
+alias answers from recursive resolvers and wildcard NODATA. Answers the
+clients received now sign as the octets they arrived as, so TLSA / SVCB
+validation needs only the DNSSEC handlers registered.
+
 ### Added
 
 - `new_resource_record_with_rdata` (and an optional `rdata` argument
