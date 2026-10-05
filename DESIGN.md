@@ -130,8 +130,8 @@ The detailed contract is in §4 (Requirements).
 ## 4. Requirements (mirror of mailsec-probe `DESIGN.md §16`)
 
 The API contract that mailsec-probe (= the consumer) asks the dnsdata
-implementations to honor. The same text lives in mailsec-probe's
-DESIGN.md and is mirrored on the Go side at
+implementations to honor. The source of truth is mailsec-probe's
+DESIGN.md §16; it is mirrored on the Go side at
 [`dnsdata-go/DESIGN.md §4`](https://github.com/shigeya/dnsdata-go/blob/main/DESIGN.md);
 this section is the TS translation.
 
@@ -226,10 +226,14 @@ Idiom mapping applied:
     Multiple `Verifier`s must be independently configurable and
     independently cancellable.
 23. Write to the filesystem by default (only touch `~/.dnsdata/` when
-    the caller explicitly opts in — shared with the Go side's
-    `~/.dnsdata-go/`).
+    the caller explicitly opts in — the same directory the Go side
+    uses).
 24. Write to `stdout` / `stderr` (the caller routes output to their
     logger of choice).
+
+MUST NOT 20 (`process.exit`) and 24 (`stdout` / `stderr`) are
+contracts of the library modules; the commands under `src/cli/` are
+programs, not library code, and are outside their scope.
 
 ## 5. Porting policy
 
