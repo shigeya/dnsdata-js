@@ -4,6 +4,9 @@
   "description": "DNS/DNSSEC core data model, wire format, zone parser, and chain verifier",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "dnsview": "dist/cli/dnsview.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

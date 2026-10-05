@@ -81,6 +81,25 @@ npx ts-node src/cli/main.ts --update-root-anchors
 
 User data location: `~/.dnsdata/` — shared with `dnsdata-go`.
 
+### dnsview
+
+`dnsview` is a diagnostic command, installed as the package's `bin`: it
+runs the chain Verifier against one server and prints one JSON line per
+query, `{"query":{"name","type"},"server","error"?,"result"}`, where
+`result` is the verifier `Result` (or `null` when validation threw).
+It ports dnsdata-go's `cmd/dnsview` with the same flags:
+
+```bash
+dnsview -server 192.0.2.53 -type A,TXT example.com.
+```
+
+Queries go over UDP, retried over TCP on truncation. `-server` is
+required; `-anchors FILE` replaces the built-in IANA root anchors (no
+file is read implicitly), `-cd` sets the CD bit and `-timeout` (default
+`10s`) bounds each query. Exit status 1 when any query could not be
+validated, 2 on a usage error. From a checkout:
+`npx ts-node src/cli/dnsview.ts -server … NAME`.
+
 ## Architecture
 
 This is a [Lerna](https://lerna.js.org/) monorepo. Currently it contains a

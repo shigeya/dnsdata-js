@@ -14,6 +14,17 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Added
+
+- `dnsview` (`src/cli/dnsview.ts`, the package's `bin`): a diagnostic
+  command that validates queries against one server (UDP, TCP on
+  truncation) and prints, per query, one JSON line
+  `{"query","server","error"?,"result"}` with the verifier `Result`.
+  `-server` is required; `-type` (comma-separated, any case),
+  `-anchors` (default: the built-in IANA root anchors), `-cd`,
+  `-timeout` (default 10s). Ports dnsdata-go's `cmd/dnsview` (UP-020);
+  both give the same verdicts on `tests/testdata/signed`.
+
 ## [0.8.0] — 2026-10-03
 
 Coordinated release with dnsdata-go v0.8.0 (port-back of UP-016 –

@@ -97,8 +97,8 @@ synchronised with `mailsec-probe` Phase 3.0 and tracks the
   `packages/core/tests/`.
 - Target ≥ 80% line coverage (matches the Go side's bar).
 - Tests are organised by package mirroring the source layout
-  (`tests/{types,wire,zone,dnssec,resolver,verifier}/`); the CLI in
-  `src/cli/` currently has no dedicated test directory.
+  (`tests/{types,wire,zone,dnssec,resolver,verifier}/`); of the CLI in
+  `src/cli/`, only `dnsview` is tested (`tests/cli/`).
 
 ## Commits
 
