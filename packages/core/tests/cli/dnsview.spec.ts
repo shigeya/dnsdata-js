@@ -192,6 +192,40 @@ describe('dnsview output', () => {
     });
 });
 
+// NAME goes to validate() as typed. The verifier lower-cases it and adds
+// the trailing dot, so any spelling gives the verdict and the result of
+// the canonical name; query.name echoes the spelling given.
+describe('dnsview name spellings', () => {
+    const auth = loadAuthority();
+
+    async function resultOf(name: string, type: string): Promise<Record<string, unknown>> {
+        const out = await runWith(auth, vectorClock, '-server', '192.0.2.53', '-anchors', anchorsFile, '-type', type, name);
+        expect(out.code).toBe(EXIT_OK);
+        return JSON.parse(out.stdout) as Record<string, unknown>;
+    }
+
+    const groups: ReadonlyArray<[string, string, string, string[]]> = [
+        ['test.', 'SOA', 'secure', ['test', 'Test.', 'TEST']],
+        ['www.example.test.', 'A', 'secure', ['www.example.test', 'WWW.Example.TEST.', 'Www.Example.Test']],
+        ['example.test.', 'SOA', 'secure', ['example.test', 'Example.Test.', 'EXAMPLE.TEST']],
+        ['nope.example.test.', 'A', 'secure-nxdomain', ['nope.example.test', 'NOPE.example.test.']],
+        ['www.example.test.', 'MX', 'secure-nodata', ['WWW.EXAMPLE.TEST']],
+        ['x.wild.example.test.', 'A', 'secure', ['X.Wild.Example.Test']],
+        ['alias.example.test.', 'A', 'secure', ['Alias.Example.Test']],
+        ['www.insecure.test.', 'A', 'insecure', ['WWW.Insecure.Test']],
+    ];
+    const rows = groups.flatMap(([canonical, type, verdict, spellings]) =>
+        spellings.map((s) => [`${s}/${type}`, s, canonical, type, verdict] as const));
+
+    it.each(rows)('%s', async (_name, spelling, canonical, type, verdict) => {
+        const want = await resultOf(canonical, type);
+        const got = await resultOf(spelling, type);
+        expect((got.result as Result).verdict).toBe(verdict);
+        expect((got.query as { name: string }).name).toBe(spelling);
+        expect(JSON.stringify(got.result)).toBe(JSON.stringify(want.result));
+    });
+});
+
 describe('dnsview usage', () => {
     const missing = path.join(os.tmpdir(), 'dnsview-no-such-anchors.json');
 
