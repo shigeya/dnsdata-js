@@ -14,6 +14,12 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-05
+
+Coordinated release with dnsdata-go v0.9.0 (port-back of UP-020). A
+diagnostic command, `dnsview`, installed as the package's first `bin`.
+The library API and its behaviour are unchanged.
+
 ### Added
 
 - `dnsview` (`src/cli/dnsview.ts`, the package's `bin`): a diagnostic
@@ -22,8 +28,10 @@ version?" question answerable at a glance.
   `{"query","server","error"?,"result"}` with the verifier `Result`.
   `-server` is required; `-type` (comma-separated, any case),
   `-anchors` (default: the built-in IANA root anchors), `-cd`,
-  `-timeout` (default 10s). Ports dnsdata-go's `cmd/dnsview` (UP-020);
-  both give the same verdicts on `tests/testdata/signed`.
+  `-timeout` (default 10s). NAME may be given in any case, with or
+  without the trailing dot: the verifier normalises it, and
+  `query.name` echoes it as given. Ports dnsdata-go's `cmd/dnsview`
+  (UP-020); both give the same verdicts on `tests/testdata/signed`.
 
 ## [0.8.0] — 2026-10-03
 

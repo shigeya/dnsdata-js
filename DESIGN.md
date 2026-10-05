@@ -279,6 +279,7 @@ captures the high-level milestones.
 | v0.6.0 | Resolver layer surfaces structured `ResolverResponse` (`records` + `ad` + `rcode`). RCODE classification moves into `verifier/chain.ts:load_records`; NXDOMAIN handled as "no records present" | UP-009 |
 | v0.7.0 | RFC 3597 unknown types; strict zone reader and canonical output; zone signer (`signer`); in-memory authority (`memory`) with byte-identical shared vectors; `Result.answer`; RRSIG digest order and validity window fixed (UF-005 / UF-006); `Verifier` exported from the entry point | UP-010..015 |
 | v0.8.0 | CD bit on queries; TLSA / SMIMEA / SVCB / HTTPS presented by type; `\DDD` escapes and UTF-8 text for TXT and CAA; NSEC3 signing and NSEC3 proofs from `memory`; `DoTClient`; `parse_message` / `rdata_to_string` exported; received RDATA signed as is (`new_resource_record_with_rdata`); DNAME, alias and wildcard NODATA verdicts fixed | UP-016..019, UF-007 |
+| v0.9.0 | `dnsview` diagnostic command (the package's `bin`): one JSON line per query with the verifier `Result` | UP-020 |
 
 Coordinated with mailsec-probe Phase 3.0 (target: mailsec-probe v0.1.0
 → v0.3.0).

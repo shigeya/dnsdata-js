@@ -88,7 +88,7 @@ GitHub Issues with the originator tag fill that role.
 
 See the "Roadmap" section of [`DESIGN.md`](DESIGN.md). Progress is
 synchronised with `mailsec-probe` Phase 3.0 and tracks the
-`dnsdata-go` sibling's version numbers — current line is v0.8.0.
+`dnsdata-go` sibling's version numbers — current line is v0.9.0.
 
 ## Testing
 
