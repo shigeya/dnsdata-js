@@ -5,7 +5,8 @@
 import { WireBuilder, compare_uint8arrays } from '../wire/dns_wire_util';
 import { domain_name2wire } from '../wire/dns_wire';
 import { StringToRRType, RRTypeName } from '../types/dns_type_table';
-import { Zone, ResourceRecord } from '../zone/dns_zone';
+import { Zone, ResourceRecord, ResourceRecordHandler } from '../zone/dns_zone';
+import { Registry, default_registry } from '../zone/registry';
 import { GENERIC_RDATA_MARKER } from '../zone/generic';
 import { DNSZoneRDataFormatError } from '../dns_exception';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
@@ -29,8 +30,14 @@ const MILLISECONDS_PER_SECOND = 1000;
 const DNSSEC_HANDLER_TYPES: ReadonlySet<number> = new Set(
     ['DNSKEY', 'CDNSKEY', 'RRSIG', 'DS', 'CDS', 'NSEC', 'NSEC3', 'NSEC3PARAM'].map((t) => StringToRRType(t)));
 
-// registration_for names the call that registers an encoder for type.
-function registration_for(type: number): string {
+// registration_for names the call that registers an encoder for type,
+// in the default registry or (own_registry) in the zone's own one.
+function registration_for(type: number, own_registry: boolean): string {
+    if (own_registry) {
+        return DNSSEC_HANDLER_TYPES.has(type)
+            ? 'register_dnssec_handlers_into(registry)'
+            : 'register_legacy_handlers_into(registry) on the zone\'s registry';
+    }
     return DNSSEC_HANDLER_TYPES.has(type)
         ? 'register_dnssec_handlers()'
         : 'registerAllHandlers() or register_legacy_handlers()';
@@ -49,14 +56,38 @@ function key_identity(key: DNSKey): string {
     ].join(' ');
 }
 
+// Record handlers (DNSKEY, RRSIG, DS, ...) are resolved through the
+// zone's Registry ([DNSSecZone.set_registry]; the default registry when
+// none is set), both for lookups and for the RDATA encoding of digest
+// targets.
 export class DNSSecZone extends Zone {
     private seps: string[] = [];
     private trusted_keys: Set<string> = new Set();
     private _parent: DNSSecZone | null = null;
     private _now: (() => Date) | null = null;
+    private _registry: Registry | null = null;
 
     get parent(): DNSSecZone | null { return this._parent; }
     set parent(zone: DNSSecZone | null) { this._parent = zone; }
+
+    // set_registry makes the zone resolve record handlers through
+    // registry; null means default_registry(). Fill it with
+    // register_dnssec_handlers_into (and register_legacy_handlers_into
+    // for the zone types). Ports dnsdata-go `Zone.SetRegistry`.
+    set_registry(registry: Registry | null): void {
+        this._registry = registry;
+    }
+
+    // get_registry returns the registry the zone resolves handlers
+    // through.
+    get_registry(): Registry {
+        return this._registry ?? default_registry();
+    }
+
+    // handler returns rr's handler from the zone's registry.
+    handler(rr: ResourceRecord): ResourceRecordHandler | null {
+        return rr.get_handler(this.get_registry());
+    }
 
     // set_clock makes [verify_rrsig] reject an RRSIG whose validity
     // window (RFC 4034 §3.1.5, RFC 4035 §5.3.1) does not contain now().
@@ -109,7 +140,7 @@ export class DNSSecZone extends Zone {
             // it is RFC 3597 generic RDATA (decoded by get_handler).
             if (!rr.value.startsWith(type_str + ' ') && !rr.value.startsWith(GENERIC_RDATA_MARKER + ' ')) continue;
 
-            const handler = rr.get_handler();
+            const handler = this.handler(rr);
             if (handler instanceof RRSig && handler.type_covered === type_covered) {
                 if (!signer || handler.signer === signer) {
                     result.push(handler);
@@ -127,7 +158,7 @@ export class DNSSecZone extends Zone {
         const dnskey_type = StringToRRType('DNSKEY');
         const result: DNSKey[] = [];
         for (const rr of this.find_rrset(signer_name, dnskey_type)) {
-            const handler = rr.get_handler();
+            const handler = this.handler(rr);
             if (!(handler instanceof DNSKey)) continue;
             if (keytag !== undefined && handler.key_tag !== keytag) continue;
             if (algorithm !== undefined && handler.algorithm !== algorithm) continue;
@@ -172,11 +203,12 @@ export class DNSSecZone extends Zone {
         const bodies: Uint8Array[] = [];
         for (const rr of rrset) {
             const body_builder = new WireBuilder();
-            rr.get_wire_body(body_builder);
+            rr.get_wire_body(body_builder, this.get_registry());
             const body = body_builder.build();
             if (body.length < RDLENGTH_OCTETS) {
+                const own = this.get_registry() !== default_registry();
                 throw new DNSZoneRDataFormatError(
-                    `no encoder for ${rr.label} ${RRTypeName(rr.type)} (call ${registration_for(rr.type)}, ` +
+                    `no encoder for ${rr.label} ${RRTypeName(rr.type)} (call ${registration_for(rr.type, own)}, ` +
                     'or keep the received RDATA with new_resource_record_with_rdata)');
             }
             bodies.push(body);
@@ -289,7 +321,7 @@ export class DNSSecZone extends Zone {
 
         // RFC 4035: any-valid semantics — at least one supported DS must match
         for (const ds_rr of ds_records) {
-            const handler = ds_rr.get_handler();
+            const handler = this.handler(ds_rr);
             // Support DS digest types: 1 (SHA-1), 2 (SHA-256), 4 (SHA-384)
             if (handler instanceof DNSRR_DS && (handler.digest_type === 1 || handler.digest_type === 2 || handler.digest_type === 4)) {
                 if (this.verify_delegation_signer_with_ds(dnskey, handler)) {

@@ -19,7 +19,7 @@ export function nsec_candidates(z: DNSSecZone): NsecCandidate[] {
     const out: NsecCandidate[] = [];
     for (const rr of z.all_records()) {
         if (rr.type !== TYPE_NSEC) continue;
-        const h = rr.get_handler();
+        const h = z.handler(rr);
         if (h instanceof DNSRR_NSEC) {
             out.push({ owner: rr.label, nsec: h });
         }
@@ -41,7 +41,7 @@ export function nsec3_candidates(z: DNSSecZone): Nsec3Candidate[] {
     const out: Nsec3Candidate[] = [];
     for (const rr of z.all_records()) {
         if (rr.type !== TYPE_NSEC3) continue;
-        const h = rr.get_handler();
+        const h = z.handler(rr);
         if (!(h instanceof DNSRR_NSEC3)) continue;
         let hash: Uint8Array;
         try { hash = owner_hash_from_name(rr.label); }

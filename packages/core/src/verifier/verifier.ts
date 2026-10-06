@@ -26,6 +26,8 @@
 
 import { RRTypeToString } from '../types/dns_type_table';
 import { BUILTIN_ROOT_ANCHORS, RootAnchors } from '../dnssec/root_anchors';
+import { register_dnssec_handlers_into } from '../dnssec/handlers';
+import { Registry } from '../zone/registry';
 import { Resolver } from './resolver';
 import { Result } from './result';
 import { Cache } from './cache';
@@ -56,6 +58,21 @@ export interface VerifierOptions {
     // intended way to satisfy DESIGN.md §4 SHOULD #13. A nullish
     // value is treated as no cache attached.
     cache?: Cache;
+
+    // Optional. The registry the Verifier resolves record handlers
+    // through, instead of its own registry of the DNSSEC handlers. Use
+    // it to add handlers, e.g. the zone types:
+    //
+    //   const registry = new Registry();
+    //   register_dnssec_handlers_into(registry);
+    //   register_legacy_handlers_into(registry);
+    //   new Verifier({ resolver, registry });
+    //
+    // It must hold the DNSSEC handlers for validation to succeed.
+    // Passing default_registry() shares the process-wide registry, and
+    // with it the handlers ResourceRecord.get_handler() returns. A
+    // nullish value is treated as not set.
+    registry?: Registry;
 }
 
 export class Verifier {
@@ -65,7 +82,22 @@ export class Verifier {
     // validity windows are checked against it.
     readonly now: () => Date;
     readonly cache?: Cache;
+    // Registry set on every DNSSecZone the chain walker builds.
+    readonly registry: Registry;
 
+    // The Verifier resolves record handlers through a Registry it owns:
+    // by default a fresh one holding the DNSSEC handlers
+    // (register_dnssec_handlers_into), or VerifierOptions.registry. It
+    // never touches the default registry, so it works without
+    // registerAllHandlers() (DESIGN.md §4 MUST NOT 22). The zone
+    // handlers are not in the default set: an answer the resolver
+    // clients received (TLSA, SVCB, ...) carries its RDATA octets, which
+    // sign as they are (new_resource_record_with_rdata).
+    //
+    // Records are shared with the resolver and any Cache. A handler
+    // cached on a record is tied to the registry that built it
+    // (ResourceRecord.get_handler), so Verifiers with different
+    // registries sharing one cache stay independent.
     constructor(opts: VerifierOptions) {
         if (!opts || !opts.resolver) {
             throw new VerifierConfigError('verifier: resolver is required');
@@ -74,15 +106,7 @@ export class Verifier {
         this.anchors = opts.trustAnchors ?? BUILTIN_ROOT_ANCHORS;
         this.now = opts.now ?? (() => new Date());
         if (opts.cache != null) this.cache = opts.cache;
-        // The constructor does not register RR handlers, and no module
-        // registers them at import time: the caller runs
-        // registerAllHandlers() (or register_dnssec_handlers()) once
-        // before validate(), or the DNSKEY / DS / RRSIG / NSEC records
-        // do not decode and nothing verifies. The zone handlers are
-        // not needed for answers the resolver clients received (TLSA,
-        // SVCB, ...): those records carry their RDATA octets, which
-        // sign as they are. The Go side's `NewVerifier` calls
-        // `dnssec.RegisterHandlers()` itself.
+        this.registry = opts.registry ?? dnssec_registry();
     }
 
     // Walks the DNSSEC chain of trust from the root zone down to
@@ -93,6 +117,13 @@ export class Verifier {
 }
 
 //////////////////////////////////////////////////// Shared helpers
+
+// dnssec_registry returns a fresh registry holding the DNSSEC handlers.
+function dnssec_registry(): Registry {
+    const registry = new Registry();
+    register_dnssec_handlers_into(registry);
+    return registry;
+}
 
 // Lower-cases qname and ensures it ends with a single trailing dot.
 // Exported for tests.

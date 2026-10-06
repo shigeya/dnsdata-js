@@ -62,8 +62,39 @@ version?" question answerable at a glance.
   not it carries the SEP flag. A zone whose KSK lacks the SEP flag now
   validates as Secure instead of Bogus.
 
+- `Verifier` resolves record handlers through a registry it owns: by
+  default a fresh one holding the DNSSEC handlers only, or
+  `VerifierOptions.registry`. It no longer needs `registerAllHandlers()`
+  (or `register_dnssec_handlers()`) and never touches the default
+  registry (DESIGN.md §4 MUST NOT 22). Verdicts are unchanged. A
+  `Verifier` no longer sees handlers registered globally, so records
+  whose presentation form needs a zone handler (TLSA, SVCB, ... without
+  their received RDATA) need `VerifierOptions.registry` with
+  `register_legacy_handlers_into`; passing `default_registry()` restores
+  the old sharing. Ports dnsdata-go `d359fce`.
+- The handler cached on a `ResourceRecord` is tied to the registry that
+  built it and is never returned for another registry, so Verifiers
+  with different registries can share one cache.
+
 ### Added
 
+- `Registry` (`zone/registry.ts`): a map from RR type to handler
+  factory, with `register(type, factory, rdata_factory?)` (a `null`
+  factory removes the entry), `lookup(type)` and `lookup_rdata(type)`.
+  The module registry is `default_registry()`; `register_rr_handler`,
+  `register_dnssec_handlers`, `register_legacy_handlers`,
+  `registerAllHandlers` and the signer use it as before. Ports
+  dnsdata-go `4003958`.
+- `ResourceRecord.get_handler(registry?)`, `get_wire_body(builder,
+  registry?)` and `has_encoder(type, registry?)` take an optional
+  registry (default: the default one).
+- `register_dnssec_handlers_into(registry)` and
+  `register_legacy_handlers_into(registry)`: the bundled handler sets,
+  installed into a caller-owned registry.
+- `DNSSecZone.set_registry(registry | null)`, `get_registry()` and
+  `handler(rr)`: a zone resolves its DNSKEY / RRSIG / DS / NSEC / NSEC3
+  handlers, and the RDATA of its digest targets, through its registry.
+- `VerifierOptions.registry` and `Verifier.registry`.
 - `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
   a zone treats as authenticated from outside it, by owner and RDATA.
 - `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every

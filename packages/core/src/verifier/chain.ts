@@ -119,10 +119,11 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
 
 // new_zone returns an empty zone whose RRSIG checks use the verifier's
 // clock (RFC 4035 §5.3.1: a signature outside its validity window does
-// not verify).
+// not verify) and whose handlers come from the verifier's registry.
 function new_zone(v: Verifier): DNSSecZone {
     const zone = new DNSSecZone();
     zone.set_clock(v.now);
+    zone.set_registry(v.registry);
     return zone;
 }
 
@@ -440,7 +441,7 @@ function summarize_zone(zoneName: string, z: DNSSecZone, ksk: DNSKey): ZoneStep 
     if (dnskeyRRs.length > 0) {
         step.dnskeys = [];
         for (const rr of dnskeyRRs) {
-            const h = rr.get_handler();
+            const h = z.handler(rr);
             if (h instanceof DNSKey) {
                 step.dnskeys.push({
                     keyTag: h.key_tag,
@@ -455,7 +456,7 @@ function summarize_zone(zoneName: string, z: DNSSecZone, ksk: DNSKey): ZoneStep 
     if (dsRRs.length > 0) {
         step.dsDigests = [];
         for (const rr of dsRRs) {
-            const h = rr.get_handler();
+            const h = z.handler(rr);
             if (h instanceof DNSRR_DS) {
                 step.dsDigests.push({
                     keyTag: h.key_tag,
@@ -479,7 +480,7 @@ function summarize_zone(zoneName: string, z: DNSSecZone, ksk: DNSKey): ZoneStep 
 // that DS rrset). The SEP flag is not required (RFC 4034 §2.1.1).
 function match_ksks_with_ds(childZone: DNSSecZone, parentZone: DNSSecZone, childName: string): DNSKey[] {
     const dses = parentZone.find_rrset(childName, TYPE_DS)
-        .map((rr) => rr.get_handler())
+        .map((rr) => parentZone.handler(rr))
         .filter((h): h is DNSRR_DS => h instanceof DNSRR_DS);
     return childZone.find_dnskeys(childName).filter((key) =>
         dses.some((ds) =>

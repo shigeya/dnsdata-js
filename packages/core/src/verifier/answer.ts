@@ -21,7 +21,7 @@ export function build_answer(z: DNSSecZone, qname: string, qtype: number): Answe
     const records: AnswerRecord[] = z.find_rrset(qname, qtype).map((rr) => {
         const b = new WireBuilder();
         try {
-            rr.get_wire_body(b);
+            rr.get_wire_body(b, z.get_registry());
         } catch (err: unknown) {
             throw new VerifierError(`verifier: answer ${rr.label}: ${error_message(err)}`);
         }

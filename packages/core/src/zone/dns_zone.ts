@@ -15,6 +15,7 @@ import {
 } from './generic';
 import { parse_zone_strict } from './strict';
 import { sort_canonical } from './canonical';
+import { Registry, default_registry, type HandlerFactory } from './registry';
 
 // Type aliases
 export type ns_type = number;
@@ -25,24 +26,16 @@ const TYPE_TXT    = 16;
 // Octets of RDLENGTH in front of the RDATA written by get_wire_body.
 const RDLENGTH_OCTETS = 2;
 
-// Handler registry for extensible RR type handling (used by dnssec_rr.ts)
-type HandlerFactory = (rr: ResourceRecord, value: string) => ResourceRecordHandler;
-// Builds a handler straight from RDATA octets, for types whose octets do
-// not go through rdata_to_string (SVCB / HTTPS).
-type HandlerRDataFactory = (rr: ResourceRecord, rdata: Uint8Array) => ResourceRecordHandler;
-const handler_registry = new Map<ns_type, HandlerFactory>();
-const rdata_factory_registry = new Map<ns_type, HandlerRDataFactory>();
+// Handler registries for extensible RR type handling (see registry.ts).
+export {
+    Registry, default_registry, register_rr_handler,
+    type HandlerFactory, type HandlerRDataFactory,
+} from './registry';
 
-// rdata_factory, when given, decodes a value held in RFC 3597 generic
-// form; without it such a value is decoded through rdata_to_string.
-export function register_rr_handler(type: ns_type, factory: HandlerFactory,
-                                    rdata_factory?: HandlerRDataFactory): void {
-    handler_registry.set(type, factory);
-    if (rdata_factory) {
-        rdata_factory_registry.set(type, rdata_factory);
-    } else {
-        rdata_factory_registry.delete(type);
-    }
+// The handler cached on a ResourceRecord, with the Registry that built it.
+interface HandlerEntry {
+    registry: Registry;
+    handler: ResourceRecordHandler;
 }
 
 // RR types that ResourceRecord encodes inline (no separate handler).
@@ -61,12 +54,13 @@ const BUILTIN_ENCODER_TYPES: ReadonlySet<ns_type> = new Set<ns_type>([
     257, // CAA
 ]);
 
-// True if this type has an encoder available — either a registered handler
-// or one of the built-in `_wire_body_*` methods. Lets callers tell
-// "encoder missing for this type" apart from "encoder threw on malformed
-// RDATA" (the latter now surfaces as DNSZoneRDataFormatError).
-export function has_encoder(type: ns_type): boolean {
-    return handler_registry.has(type) || BUILTIN_ENCODER_TYPES.has(type);
+// True if this type has an encoder available — either a handler in
+// registry (default: default_registry()) or one of the built-in
+// `_wire_body_*` methods. Lets callers tell "encoder missing for this
+// type" apart from "encoder threw on malformed RDATA" (the latter now
+// surfaces as DNSZoneRDataFormatError).
+export function has_encoder(type: ns_type, registry: Registry = default_registry()): boolean {
+    return registry.lookup(type) !== undefined || BUILTIN_ENCODER_TYPES.has(type);
 }
 
 // Abstract base class for resource record data handlers
@@ -214,7 +208,8 @@ export class ResourceRecord {
     readonly rrclass: ns_class;
     readonly type: ns_type;
     readonly value: string;
-    private handler: ResourceRecordHandler | null = null;
+    // See get_handler: one entry, tied to the registry that built it.
+    private handler_entry: HandlerEntry | null = null;
     // The RDATA as received; see new_resource_record_with_rdata.
     private readonly received_rdata: Uint8Array | null;
 
@@ -231,13 +226,25 @@ export class ResourceRecord {
         this.received_rdata = rdata === undefined ? null : Uint8Array.from(rdata);
     }
 
+    // Returns the type-specific handler built by registry's factory
+    // (default: default_registry()), constructing it on first access, or
+    // null when registry has no factory for the type.
+    //
     // A value in RFC 3597 generic form (`\# <len> <hex>`) is decoded from
     // its octets by type, so a known type received as generic RDATA still
     // yields its structured handler (null when the octets do not decode).
-    get_handler(): ResourceRecordHandler | null {
-        if (this.handler !== null) return this.handler;
+    //
+    // The handler is cached on the record together with the registry
+    // that built it, and the cache is only returned for that same
+    // registry: a record shared between users of different registries
+    // (two Verifiers sharing one cache, say) never hands one registry's
+    // handler to the other. The cache holds one entry; alternating
+    // registries rebuild the handler.
+    get_handler(registry: Registry = default_registry()): ResourceRecordHandler | null {
+        const cached = this.handler_entry;
+        if (cached !== null && cached.registry === registry) return cached.handler;
 
-        const factory = handler_registry.get(this.type);
+        const factory = registry.lookup(this.type);
         if (!factory) return null;
 
         let raw: Uint8Array | null;
@@ -246,8 +253,10 @@ export class ResourceRecord {
         } catch {
             return null;
         }
-        this.handler = raw === null ? factory(this, this.value) : this._handler_from_generic(factory, raw);
-        return this.handler;
+        const handler = raw === null ? factory(this, this.value) : this._handler_from_generic(registry, factory, raw);
+        if (handler === null) return null;
+        this.handler_entry = { registry, handler };
+        return handler;
     }
 
     // Returns the RDATA octets when value is in the RFC 3597 generic form,
@@ -285,9 +294,10 @@ export class ResourceRecord {
     // Builds the handler for a record held in generic form. Only consulted
     // when a factory is registered for the type, so handler registration
     // stays opt-in. Returns null when the octets do not decode.
-    private _handler_from_generic(factory: HandlerFactory, rdata: Uint8Array): ResourceRecordHandler | null {
+    private _handler_from_generic(registry: Registry, factory: HandlerFactory,
+                                  rdata: Uint8Array): ResourceRecordHandler | null {
         try {
-            const rdata_factory = rdata_factory_registry.get(this.type);
+            const rdata_factory = registry.lookup_rdata(this.type);
             if (rdata_factory) return rdata_factory(this, rdata);
             const pres = this._presentation_from_generic(rdata);
             return pres === null ? null : factory(this, pres);
@@ -319,7 +329,9 @@ export class ResourceRecord {
     // (TLSA, SMIMEA, SVCB, HTTPS, ...), so the received octets are their
     // canonical form (RFC 4034 §6.2, RFC 3597 §4); the types that hold
     // such names have built-in encoders.
-    get_wire_body(builder: WireBuilder): void {
+    //
+    // The handler comes from registry (default: default_registry()).
+    get_wire_body(builder: WireBuilder, registry: Registry = default_registry()): void {
         const raw = this.generic_rdata();
         if (raw !== null) {
             builder.append_uint16(raw.length);
@@ -327,7 +339,7 @@ export class ResourceRecord {
             return;
         }
 
-        const h = this.get_handler();
+        const h = this.get_handler(registry);
         if (h !== null) {
             h.get_wire_body(builder);
             return;

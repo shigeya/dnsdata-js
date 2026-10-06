@@ -4,13 +4,14 @@
 // importing this entry point does NOT install anything in the
 // handler registry. Consumers must call [registerAllHandlers] once
 // at startup (or the per-pkg helpers exported alongside it) before
-// ResourceRecord.get_handler() / DNSSecZone signature checks /
-// chain validation can resolve the handler for the registered RR
-// types. Mirrors dnsdata-go's `dnssec.RegisterHandlers()` and the
-// equivalent zone-side initialisation hook.
+// ResourceRecord.get_handler() / DNSSecZone signature checks can
+// resolve the handler for the registered RR types. Mirrors
+// dnsdata-go's `dnssec.RegisterHandlers()` and the equivalent
+// zone-side initialisation hook. A Verifier needs none of this: it
+// owns a Registry of the DNSSEC handlers (VerifierOptions.registry).
 
-import { register_dnssec_handlers } from './dnssec/handlers';
-import { register_legacy_handlers } from './zone/handlers';
+import { register_dnssec_handlers, register_dnssec_handlers_into } from './dnssec/handlers';
+import { register_legacy_handlers, register_legacy_handlers_into } from './zone/handlers';
 
 // registerAllHandlers installs the DNSSEC handlers (DNSKEY, CDNSKEY,
 // RRSIG, DS, CDS, NSEC, NSEC3, NSEC3PARAM) and the legacy zone
@@ -25,7 +26,10 @@ export function registerAllHandlers(): void {
     register_legacy_handlers();
 }
 
-export { register_dnssec_handlers, register_legacy_handlers };
+export {
+    register_dnssec_handlers, register_legacy_handlers,
+    register_dnssec_handlers_into, register_legacy_handlers_into,
+};
 
 export * from './dns_exception';
 export * from './types/dns_type_table';

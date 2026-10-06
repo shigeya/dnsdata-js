@@ -68,7 +68,8 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `wire/rdata_svcb.go`                      | `wire/rdata_svcb.ts`                 | TLSA / SMIMEA and SVCB / HTTPS presentation (UP-017) |
 | (`net.IP.String`)                         | `wire/ip_format.ts`                  | IP address strings for the RDATA decoders |
 | `wire/edns.go`                            | `zone/rr/opt_rr.ts`                  | EDNS(0) OPT codec |
-| `zone/rr.go`, `zone/zone.go`              | `zone/dns_zone.ts`                   | `ResourceRecord`, `Zone`, handler registry |
+| `zone/rr.go`, `zone/zone.go`              | `zone/dns_zone.ts`                   | `ResourceRecord`, `Zone` |
+| `zone/registry.go`                        | `zone/registry.ts`                   | `Registry`, `default_registry`, `register_rr_handler` |
 | `zone/generic.go`                         | `zone/generic.ts`                    | RFC 3597 `\# <len> <hex>` generic RDATA (UP-010) |
 | `zone/strict.go`                          | `zone/strict.ts`                     | Strict master-file reader behind `Zone.read_string_strict` (UP-011) |
 | `zone/canonical.go`                       | `zone/canonical.ts`                  | `compare_canonical_names`, canonical sort behind `Zone.records_canonical` (UP-012) |
