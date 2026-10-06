@@ -37,7 +37,7 @@ function registration_for(type: number, own_registry: boolean): string {
     if (own_registry) {
         return DNSSEC_HANDLER_TYPES.has(type)
             ? 'register_dnssec_handlers_into(registry)'
-            : 'register_legacy_handlers_into(registry) on the zone\'s registry';
+            : 'register_legacy_handlers_into(registry) on the zone\'s registry, e.g. VerifierOptions.zoneHandlers';
     }
     return DNSSEC_HANDLER_TYPES.has(type)
         ? 'register_dnssec_handlers()'

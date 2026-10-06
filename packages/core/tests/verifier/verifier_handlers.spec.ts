@@ -21,9 +21,23 @@ import type * as MessageModule from '../../src/wire/dns_message';
 import type * as WireModule from '../../src/wire/dns_wire';
 import type * as WireUtilModule from '../../src/wire/dns_wire_util';
 import type * as ZoneModule from '../../src/zone/dns_zone';
+import type * as ZoneHandlersModule from '../../src/zone/handlers';
+import type * as RegistryModule from '../../src/zone/registry';
+import type * as ErrorsModule from '../../src/verifier/errors';
 
 const handlersDir = path.join(__dirname, '..', 'testdata', 'handlers');
 const clock = new Date('2026-06-01T00:00:00Z');
+
+// ZONE_HANDLER_ANSWERS are the zone-handler-type records of
+// testdata/handlers, in presentation form.
+const ZONE_HANDLER_ANSWERS = [
+    ['svc.example.test.', 64, '1 target.example.'],
+    ['www.example.test.', 65, '1 . alpn=h2'],
+    ['_443._tcp.www.example.test.', 52, '3 1 1 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'],
+    ['x._smimecert.example.test.', 53, '3 0 1 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'],
+] as const;
+
+const TYPE_NAMES: Readonly<Record<number, string>> = { 52: 'TLSA', 53: 'SMIMEA', 64: 'SVCB', 65: 'HTTPS' };
 
 function read(name: string): string {
     return fs.readFileSync(path.join(handlersDir, name), 'utf8');
@@ -40,6 +54,9 @@ interface Isolated {
     wire: typeof WireModule;
     wireUtil: typeof WireUtilModule;
     zone: typeof ZoneModule;
+    zoneHandlers: typeof ZoneHandlersModule;
+    registry: typeof RegistryModule;
+    errors: typeof ErrorsModule;
 }
 
 function loadIsolated(): Isolated {
@@ -56,6 +73,9 @@ function loadIsolated(): Isolated {
             wire: require('../../src/wire/dns_wire'),
             wireUtil: require('../../src/wire/dns_wire_util'),
             zone: require('../../src/zone/dns_zone'),
+            zoneHandlers: require('../../src/zone/handlers'),
+            registry: require('../../src/zone/registry'),
+            errors: require('../../src/verifier/errors'),
         };
     });
     if (mods === undefined) throw new Error('isolateModules did not run');
@@ -123,12 +143,7 @@ describe('answers that need the zone handlers (testdata/handlers)', () => {
         expect([48, 46, 52, 53, 64, 65].map((t) => m.zone.has_encoder(t))).toEqual([false, false, false, false, false, false]);
     });
 
-    it.each([
-        ['svc.example.test.', 64, '1 target.example.'],
-        ['www.example.test.', 65, '1 . alpn=h2'],
-        ['_443._tcp.www.example.test.', 52, '3 1 1 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'],
-        ['x._smimecert.example.test.', 53, '3 0 1 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff'],
-    ] as const)('%s/%d received over UDP is secure with only the DNSSEC handlers', async (qname, qtype, value) => {
+    it.each(ZONE_HANDLER_ANSWERS)('%s/%d received over UDP is secure with only the DNSSEC handlers', async (qname, qtype, value) => {
         m.handlers.register_dnssec_handlers();
         const client = new m.auth.AuthClient({ servers: [server.addr], timeout_ms: 2000 });
         const resolver = { query: (name: string, t: number, signal?: AbortSignal) => client.resolve(name, t, signal) };
@@ -143,10 +158,53 @@ describe('answers that need the zone handlers (testdata/handlers)', () => {
     // that rebuilt it) fails with an error naming the registration.
     it('a record without an encoder names the registration it needs', async () => {
         m.handlers.register_dnssec_handlers();
-        const text = read('root.zone').split('\n').map((line) =>
-            line.startsWith('svc.example.test. 3600 IN SVCB ') ? 'svc.example.test. 3600 IN SVCB 1 target.example.' : line).join('\n');
-        const presented = m.memory.new_authority(m.memory.with_zone('.', read_zone(m, text)));
-        const v = new m.verifier.Verifier({ resolver: presented, trustAnchors: anchors, now: () => clock });
-        await expect(v.validate('svc.example.test.', 64)).rejects.toThrow(/register_legacy_handlers/);
+        const v = new m.verifier.Verifier({ resolver: presented_authority(m), trustAnchors: anchors, now: () => clock });
+        await expect(v.validate('svc.example.test.', 64)).rejects.toThrow(/VerifierOptions\.zoneHandlers/);
+    });
+
+    // Records an in-memory authority returns in presentation form
+    // without their octets validate with the zone handlers in the
+    // Verifier's own registry: through zoneHandlers, and through a
+    // registry with both handler sets. The default registry is left
+    // without them.
+    describe.each(['zoneHandlers', 'registry'] as const)('presented answers with %s', (how) => {
+        it.each(ZONE_HANDLER_ANSWERS)('%s/%d is secure', async (qname, qtype, value) => {
+            m.handlers.register_dnssec_handlers();
+            const opts = { resolver: presented_authority(m), trustAnchors: anchors, now: () => clock };
+            const v = how === 'zoneHandlers'
+                ? new m.verifier.Verifier({ ...opts, zoneHandlers: true })
+                : new m.verifier.Verifier({ ...opts, registry: both_registry(m) });
+            const res = await v.validate(qname, qtype);
+            expect(`${res.verdict} ${res.bogusReason ?? ''}`).toBe(`${m.verdict.Verdict.Secure} `);
+            expect(res.answer?.records.map((r) => r.value)).toEqual([value]);
+            expect([52, 53, 64, 65].map((t) => m.zone.has_encoder(t))).toEqual([false, false, false, false]);
+        });
+    });
+
+    it('zoneHandlers and registry together are a configuration error', () => {
+        expect(() => new m.verifier.Verifier({ resolver: authority, registry: new m.registry.Registry(), zoneHandlers: true }))
+            .toThrow(m.errors.VerifierConfigError);
     });
 });
+
+// presented_authority serves the signed zone of testdata/handlers with
+// its zone-handler-type records in presentation form, as an in-memory
+// authority returns records it holds as text (no RDATA octets).
+function presented_authority(m: Isolated): MemoryModule.Authority {
+    const text = read('root.zone').split('\n').map((line) => {
+        for (const [qname, qtype, value] of ZONE_HANDLER_ANSWERS) {
+            const prefix = `${qname} 3600 IN ${TYPE_NAMES[qtype]} `;
+            if (line.startsWith(prefix)) return prefix + value;
+        }
+        return line;
+    }).join('\n');
+    return m.memory.new_authority(m.memory.with_zone('.', read_zone(m, text)));
+}
+
+// both_registry returns a registry holding the DNSSEC and zone handlers.
+function both_registry(m: Isolated): RegistryModule.Registry {
+    const registry = new m.registry.Registry();
+    m.handlers.register_dnssec_handlers_into(registry);
+    m.zoneHandlers.register_legacy_handlers_into(registry);
+    return registry;
+}

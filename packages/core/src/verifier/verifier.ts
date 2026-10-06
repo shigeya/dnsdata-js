@@ -28,6 +28,7 @@ import { RRTypeToString } from '../types/dns_type_table';
 import { BUILTIN_ROOT_ANCHORS, RootAnchors } from '../dnssec/root_anchors';
 import { register_dnssec_handlers_into } from '../dnssec/handlers';
 import { Registry } from '../zone/registry';
+import { register_legacy_handlers_into } from '../zone/handlers';
 import { Resolver } from './resolver';
 import { Result } from './result';
 import { Cache } from './cache';
@@ -72,8 +73,22 @@ export interface VerifierOptions {
     // It must hold the DNSSEC handlers for validation to succeed.
     // Passing default_registry() shares the process-wide registry, and
     // with it the handlers ResourceRecord.get_handler() returns. A
-    // nullish value is treated as not set.
+    // nullish value is treated as not set. It cannot be combined with
+    // zoneHandlers.
     registry?: Registry;
+
+    // Optional. When true, the Verifier's own registry also holds the
+    // bundled zone handlers (register_legacy_handlers_into: TLSA,
+    // SMIMEA, SVCB, HTTPS, ...), next to the DNSSEC handlers. Use it
+    // when the resolver returns records in presentation form without
+    // their RDATA octets, e.g. an in-memory authority built from zone
+    // text, so that they encode for signature checks. It is the
+    // shorthand for the registry example above and, like the default,
+    // leaves the default registry untouched. A record that does carry
+    // its octets is then encoded by its handler from the presentation
+    // form rather than written as received. Ports dnsdata-go
+    // `verifier.WithZoneHandlers`.
+    zoneHandlers?: boolean;
 
     // Optional. Receives the steps of every validate() call (StepEvent,
     // DESIGN.md §4 SHOULD 14), e.g. for verbose logging. It is called
@@ -103,7 +118,8 @@ export class Verifier {
     // registerAllHandlers() (DESIGN.md §4 MUST NOT 22). The zone
     // handlers are not in the default set: an answer the resolver
     // clients received (TLSA, SVCB, ...) carries its RDATA octets, which
-    // sign as they are (new_resource_record_with_rdata).
+    // sign as they are (new_resource_record_with_rdata). A resolver that
+    // returns such records without their octets needs zoneHandlers.
     //
     // Records are shared with the resolver and any Cache. A handler
     // cached on a record is tied to the registry that built it
@@ -117,7 +133,10 @@ export class Verifier {
         this.anchors = opts.trustAnchors ?? BUILTIN_ROOT_ANCHORS;
         this.now = opts.now ?? (() => new Date());
         if (opts.cache != null) this.cache = opts.cache;
-        this.registry = opts.registry ?? dnssec_registry();
+        if (opts.registry != null && opts.zoneHandlers === true) {
+            throw new VerifierConfigError('verifier: registry and zoneHandlers are exclusive');
+        }
+        this.registry = opts.registry ?? own_registry(opts.zoneHandlers === true);
         if (opts.onStep != null) this.onStep = opts.onStep;
     }
 
@@ -130,10 +149,12 @@ export class Verifier {
 
 //////////////////////////////////////////////////// Shared helpers
 
-// dnssec_registry returns a fresh registry holding the DNSSEC handlers.
-function dnssec_registry(): Registry {
+// own_registry returns a fresh registry holding the DNSSEC handlers and,
+// with zone_handlers, the zone handlers.
+function own_registry(zone_handlers: boolean): Registry {
     const registry = new Registry();
     register_dnssec_handlers_into(registry);
+    if (zone_handlers) register_legacy_handlers_into(registry);
     return registry;
 }
 
