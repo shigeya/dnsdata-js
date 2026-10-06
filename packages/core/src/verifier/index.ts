@@ -20,6 +20,7 @@ export {
     validate,
     descendant_zones,
 } from './chain';
+export { ReasonCode, result_error } from './reason';
 export {
     try_cname,
     try_dname,

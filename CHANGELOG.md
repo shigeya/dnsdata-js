@@ -110,6 +110,39 @@ version?" question answerable at a glance.
 - `DNSSecUnsupportedAlgorithmError`: a key's algorithm is not
   implemented (`SigStatus.UnsupportedAlgorithm`). Ed448 is still
   verified, unlike in dnsdata-go.
+- `Result.reasonCode` (JSON `reasonCode`, absent when there is none):
+  the machine-readable cause of a failing verdict, set on every Bogus
+  and Insecure result, as a `ReasonCode` value. Codes and the class
+  `result_error(result)` returns: `no-ds` → `VerifierNoDSError`
+  (Insecure), `no-dnskey` → `VerifierNoDNSKEYError`,
+  `trust-anchor-mismatch` → `VerifierTrustAnchorMismatchError`,
+  `ds-mismatch` → `VerifierDSMismatchError`, `no-rrsig` /
+  `no-matching-key` / `sig-invalid` → `VerifierSigInvalidError`,
+  `sig-expired` / `sig-not-yet-valid` → `VerifierSigExpiredError`,
+  `unsupported-algorithm` → `VerifierUnsupportedAlgoError`, and
+  `alias-loop`, `alias-limit`, `alias-target-invalid`,
+  `wildcard-proof-missing` → `VerifierBogusError`. RRSIG failures are
+  named from the per-RRSIG statuses, by the precedence expired,
+  not-yet-valid, invalid, no-matching-key, unsupported-algorithm (the
+  last only when every RRSIG has it). Ports dnsdata-go `67829e1`.
+- `result_error(result)`: undefined without a code, otherwise an
+  instance of the code's class whose message carries the code, the
+  failure point and the human reason. The classes of the Bogus-only
+  codes extend the new `VerifierBogusError` (dnsdata-go `ErrBogus`), so
+  every error for a Bogus result is a `VerifierBogusError`.
+- New error classes `VerifierBogusError`, `VerifierNoDSError`,
+  `VerifierNoDNSKEYError`, `VerifierDSMismatchError`,
+  `VerifierSigExpiredError`, `VerifierSigInvalidError`,
+  `VerifierUnsupportedAlgoError`; `VerifierTrustAnchorMismatchError` now
+  extends `VerifierBogusError`. `validate()` never throws the
+  classified ones, except: when every signature over an rrset uses an
+  unsupported algorithm it rejects with `VerifierUnsupportedAlgoError`,
+  whose `result` is the Indeterminate Result carrying
+  `unsupported-algorithm` (dnsdata-go returns that Result with its
+  error). Other errors met while checking the signatures of a DS,
+  DNSKEY, answer, CNAME or DNAME rrset (an rrset without an encoder, a
+  malformed key) now reject as `VerifierError`, with the cause's
+  message, instead of as the raw error.
 - `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
   a zone treats as authenticated from outside it, by owner and RDATA.
 - `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every

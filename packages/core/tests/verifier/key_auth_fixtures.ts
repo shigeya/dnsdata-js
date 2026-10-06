@@ -108,8 +108,23 @@ export function delegate(parent: ZoneSetup, childApex: string, childKey: DNSKey)
 }
 
 export function add_signed(zone: DNSSecZone, label: string, value: string, key: DNSKey): void {
-    zone.add_rr_from_parts(label, TTL, 'IN', 'A', value);
-    sign_with(zone, label, TYPE_A, key);
+    add_signed_rr(zone, label, 'A', value, key);
+}
+
+// add_signed_rr adds (label, type, value) to zone and re-signs the
+// rrset with key (an earlier RRSIG over it stays).
+export function add_signed_rr(zone: DNSSecZone, label: string, type: string, value: string, key: DNSKey): void {
+    const rr = zone.add_rr_from_parts(label, TTL, 'IN', type, value);
+    sign_with(zone, label, rr.type, key);
+}
+
+// without_rrsigs / rrsigs_only split a response.
+export function without_rrsigs(records: ResourceRecord[]): ResourceRecord[] {
+    return records.filter((rr) => rr.type !== TYPE_RRSIG);
+}
+
+export function rrsigs_only(records: ResourceRecord[]): ResourceRecord[] {
+    return records.filter((rr) => rr.type === TYPE_RRSIG);
 }
 
 export function trust_anchor_for(key: DNSKey): RootAnchors {
@@ -135,23 +150,64 @@ export function rrset_with_sigs(zone: DNSSecZone, name: string, type: number): R
 
 // ZoneCollectionResolver answers (name, qtype) with that rrset and its
 // RRSIGs from every zone, followed by any extra records registered for
-// the question with add_extra.
+// the question with add_extra. An answer given with set replaces both.
 export class ZoneCollectionResolver implements Resolver {
     private readonly extras = new Map<string, ResourceRecord[]>();
+    private readonly overrides = new Map<string, ResourceRecord[]>();
+    // queries counts the resolver calls.
+    queries = 0;
 
     constructor(private readonly zones: DNSSecZone[]) {}
 
     add_extra(name: string, qtype: number, records: ResourceRecord[]): void {
-        const key = `${name.toLowerCase()}/${qtype}`;
+        const key = question_key(name, qtype);
         this.extras.set(key, [...(this.extras.get(key) ?? []), ...records]);
     }
 
-    async query(name: string, qtype: number): Promise<{ records: ResourceRecord[]; ad: boolean; rcode: number }> {
+    set(name: string, qtype: number, records: ResourceRecord[]): void {
+        this.overrides.set(question_key(name, qtype), records);
+    }
+
+    answer(name: string, qtype: number): ResourceRecord[] {
+        const key = question_key(name, qtype);
+        const set = this.overrides.get(key);
+        if (set !== undefined) return [...set];
         const out: ResourceRecord[] = [];
         for (const z of this.zones) out.push(...rrset_with_sigs(z, name, qtype));
-        out.push(...(this.extras.get(`${name.toLowerCase()}/${qtype}`) ?? []));
-        return { records: out, ad: false, rcode: 0 };
+        out.push(...(this.extras.get(key) ?? []));
+        return out;
     }
+
+    async query(name: string, qtype: number): Promise<{ records: ResourceRecord[]; ad: boolean; rcode: number }> {
+        this.queries++;
+        return { records: this.answer(name, qtype), ad: false, rcode: 0 };
+    }
+}
+
+function question_key(name: string, qtype: number): string {
+    return `${name.toLowerCase()}/${qtype}`;
+}
+
+// ThreeLevelChain is root → com. → example.com. with
+// www.example.com./A signed by example.com.'s key.
+export interface ThreeLevelChain {
+    root: ZoneSetup;
+    com: ZoneSetup;
+    leaf: ZoneSetup;
+    resolver: ZoneCollectionResolver;
+}
+
+export const LEAF_ZONE = 'example.com.';
+export const LEAF_NAME = 'www.example.com.';
+
+export function three_level_chain(): ThreeLevelChain {
+    const root = make_zone('.');
+    const com = make_zone('com.');
+    const leaf = make_zone(LEAF_ZONE);
+    delegate(root, 'com.', com.ksk);
+    delegate(com, LEAF_ZONE, leaf.ksk);
+    add_signed(leaf.zone, LEAF_NAME, CHILD_ADDR, leaf.ksk);
+    return { root, com, leaf, resolver: new ZoneCollectionResolver([root.zone, com.zone, leaf.zone]) };
 }
 
 export function new_verifier(resolver: Resolver, anchorKey: DNSKey, opts: Partial<VerifierOptions> = {}): Verifier {

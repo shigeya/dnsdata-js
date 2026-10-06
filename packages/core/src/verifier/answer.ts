@@ -6,6 +6,7 @@
 // encoding/json produces for []byte and time.Time.
 
 import { DNSSecZone, KeyVerifyMode } from '../dnssec/dnssec_zone';
+import { SigStatus } from '../dnssec/sigcheck';
 import { WireBuilder } from '../wire/dns_wire_util';
 import { Answer, AnswerRecord, AnswerSignature } from './result';
 import { VerifierError } from './errors';
@@ -35,7 +36,7 @@ export function build_answer(z: DNSSecZone, qname: string, qtype: number): Answe
         };
     });
     const signatures: AnswerSignature[] = z.find_rrsigs(qname, qtype)
-        .filter((sig) => z.verify_rrsig(qname, qtype, sig, KeyVerifyMode.None))
+        .filter((sig) => z.check_rrsig(qname, qtype, sig, KeyVerifyMode.None).status === SigStatus.Verified)
         .map((sig) => ({
             keyTag: sig.key_tag,
             algorithm: sig.algorithm,

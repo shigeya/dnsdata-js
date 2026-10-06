@@ -3,6 +3,7 @@
 // shape used as the return value of one chain-walk hop.
 
 import { Verdict } from './verdict';
+import type { ReasonCode } from './reason';
 
 export interface KeySummary {
     keyTag: number;
@@ -46,6 +47,15 @@ export interface Result {
     insecureReason?: string;
     bogusAt?: string;
     bogusReason?: string;
+    // reasonCode is the machine-readable cause of a failing verdict, one
+    // of the ReasonCode values ('sig-expired', 'no-ds', ...). Set
+    // whenever the verdict is Bogus or Insecure, and on the
+    // Indeterminate Result carried by the VerifierUnsupportedAlgoError
+    // validate() rejects with when every signature used an unsupported
+    // algorithm ('unsupported-algorithm'). Absent otherwise, including
+    // for the secure verdicts. result_error(result) turns it into the
+    // matching Error subclass.
+    reasonCode?: ReasonCode;
     // negativeReason is a short, human-readable label paired with the
     // [Verdict.SecureNoData] and [Verdict.SecureNXDomain] verdicts,
     // naming the NSEC/NSEC3 record(s) that produced the proof. Empty
@@ -160,6 +170,7 @@ export interface HopOutcome {
     insecureAt?:     string;
     insecureReason?: string;
     negativeReason?: string;
+    reasonCode?:     ReasonCode;
     alias?:          AliasStep;
     wildcard?:       WildcardInfo;
     // answer is the verified RRset of a terminal positive hop.

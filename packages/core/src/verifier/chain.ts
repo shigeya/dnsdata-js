@@ -1,5 +1,5 @@
-// Chain walker: Validate, validate_one_hop, resolve_leaf,
-// load_records, match_ksk_with_anchors plus the supporting
+// Chain walker: validate, validate_one_hop, validate_root,
+// descend_into, resolve_leaf, load_records, plus the supporting
 // summarisation / DS-anchor helpers.
 //
 // Ports dnsdata-go `verifier/chain.go`.
@@ -30,6 +30,7 @@ import { prove_no_ds } from './negative';
 import { ancestors_of, prove_no_data, prove_nx_domain } from './leaf_negative';
 import { detect_wildcard, prove_qname_non_existence } from './wildcard';
 import { build_answer } from './answer';
+import { ReasonCode, bogus_outcome, check_rrset } from './reason';
 
 const TYPE_DNSKEY = StringToRRType('DNSKEY');
 const TYPE_DS     = StringToRRType('DS');
@@ -50,7 +51,9 @@ const TYPE_DNAME  = StringToRRType('DNAME');
 // Returns Result.verdict = Bogus for verified-but-broken chains
 // (including alias loops and hop-count overflow); throws
 // (VerifierError or subclass) when the chain could not be walked
-// at all (resolver failure, abort, invalid qname).
+// at all (resolver failure, abort, invalid qname). A failing verdict
+// carries a machine-readable result.reasonCode; result_error(result)
+// turns it into the matching Error subclass.
 export async function validate(v: Verifier, qname: string, qtype: number, signal?: AbortSignal): Promise<Result> {
     if (!qname) {
         throw new VerifierInvalidQNameError('verifier: qname is empty');
@@ -69,9 +72,7 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
     for (let hop = 0; hop <= MAX_ALIAS_HOPS; hop++) {
         check_aborted(signal);
         if (seen.has(currentQname)) {
-            result.verdict = Verdict.Bogus;
-            result.bogusAt = currentQname;
-            result.bogusReason = 'alias loop detected';
+            set_bogus(result, currentQname, 'alias loop detected', ReasonCode.AliasLoop);
             return result;
         }
         seen.add(currentQname);
@@ -93,28 +94,40 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
             continue;
         }
 
-        result.verdict = combined;
-        // Carry the terminal hop's diagnostic strings so the
-        // reported location matches the final verdict.
-        if (outcome.bogusAt)       result.bogusAt = outcome.bogusAt;
-        if (outcome.bogusReason)   result.bogusReason = outcome.bogusReason;
-        if (outcome.insecureAt)    result.insecureAt = outcome.insecureAt;
-        if (outcome.insecureReason) result.insecureReason = outcome.insecureReason;
-        if (outcome.negativeReason) result.negativeReason = outcome.negativeReason;
-        if (outcome.wildcard)      result.wildcard = outcome.wildcard;
-        // Only a Secure result carries the answer: a Secure terminal
-        // hop behind an Insecure alias hop combines to Insecure.
-        if (result.verdict === Verdict.Secure && outcome.answer) {
-            result.answer = outcome.answer;
-        }
+        apply_outcome(result, outcome, combined);
         return result;
     }
 
     // Alias chain longer than MAX_ALIAS_HOPS without resolving.
-    result.verdict = Verdict.Bogus;
-    result.bogusAt = currentQname;
-    result.bogusReason = `alias chain exceeded ${MAX_ALIAS_HOPS} hops`;
+    set_bogus(result, currentQname, `alias chain exceeded ${MAX_ALIAS_HOPS} hops`, ReasonCode.AliasLimit);
     return result;
+}
+
+// apply_outcome sets the combined verdict on result and carries the
+// terminal hop's diagnostic strings, so the reported location matches
+// the final verdict.
+function apply_outcome(result: Result, outcome: HopOutcome, combined: Verdict): void {
+    result.verdict = combined;
+    if (outcome.bogusAt)        result.bogusAt = outcome.bogusAt;
+    if (outcome.bogusReason)    result.bogusReason = outcome.bogusReason;
+    if (outcome.insecureAt)     result.insecureAt = outcome.insecureAt;
+    if (outcome.insecureReason) result.insecureReason = outcome.insecureReason;
+    if (outcome.reasonCode)     result.reasonCode = outcome.reasonCode;
+    if (outcome.negativeReason) result.negativeReason = outcome.negativeReason;
+    if (outcome.wildcard)       result.wildcard = outcome.wildcard;
+    // Only a Secure result carries the answer: a Secure terminal
+    // hop behind an Insecure alias hop combines to Insecure.
+    if (result.verdict === Verdict.Secure && outcome.answer) {
+        result.answer = outcome.answer;
+    }
+}
+
+// set_bogus records a Bogus verdict decided outside a hop outcome.
+function set_bogus(result: Result, at: string, reason: string, code: ReasonCode): void {
+    result.verdict = Verdict.Bogus;
+    result.bogusAt = at;
+    result.bogusReason = reason;
+    result.reasonCode = code;
 }
 
 // new_zone returns an empty zone whose RRSIG checks use the verifier's
@@ -133,6 +146,51 @@ function new_zone(v: Verifier): DNSSecZone {
 // — that is validate()'s responsibility.
 async function validate_one_hop(v: Verifier, qname: string, qtype: number, result: Result, signal?: AbortSignal): Promise<HopOutcome> {
     // Step 1: load + verify the root zone.
+    const root = await validate_root(v, result, signal);
+    if (!(root instanceof DNSSecZone)) return root;
+
+    // Step 2: descend through each label boundary that is actually
+    // a zone cut. Empty non-terminals (no DS, but a deeper name IS
+    // a cut) must be skipped, not treated as the leaf.
+    let currentZone = root;
+    let currentName = '.';
+    for (const childName of descendant_zones(qname)) {
+        check_aborted(signal);
+        const d = await descend_into(v, currentZone, currentName, childName, result, signal);
+        switch (d.status) {
+        case 'descended':
+            if (!zone_already_in_chain(result, childName)) {
+                result.chain.push(summarize_zone(childName, d.zone, d.ksk));
+            }
+            currentZone = d.zone;
+            currentName = childName;
+            break;
+        case 'insecure':
+            return {
+                verdict: Verdict.Insecure,
+                insecureAt: childName,
+                insecureReason: d.reason,
+                reasonCode: ReasonCode.NoDS,
+            };
+        case 'bogus':
+            return bogus_outcome(childName, d.reason, d.code);
+        case 'no-cut':
+            // childName is not a zone cut under currentZone: most often
+            // qname itself (leaf resolution follows the loop), but it
+            // can be an empty non-terminal between two real cuts.
+            break;
+        }
+    }
+
+    check_aborted(signal);
+    return resolve_leaf(v, currentZone, currentName, qname, qtype, result, signal);
+}
+
+// validate_root loads the root DNSKEY rrset, matches it against the
+// configured trust anchors, and verifies the rrset signature. It adds
+// the root's step to the chain and returns the root zone, or the Bogus
+// outcome when the root does not validate.
+async function validate_root(v: Verifier, result: Result, signal?: AbortSignal): Promise<DNSSecZone | HopOutcome> {
     const rootZone = new_zone(v);
     await load_records(v, rootZone, '.', TYPE_DNSKEY, result, signal);
 
@@ -140,98 +198,81 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
     // as verified only through an RRSIG made by one of them.
     const rootKSKs = match_ksks_with_anchors(v, rootZone);
     if (rootKSKs.length === 0) {
-        return {
-            verdict: Verdict.Bogus,
-            bogusAt: '.',
-            bogusReason: 'root KSK does not match any configured trust anchor',
-        };
+        return bogus_outcome('.', 'root KSK does not match any configured trust anchor',
+            ReasonCode.TrustAnchorMismatch);
     }
-    const rootKSK = rootKSKs[0];
-    for (const key of rootKSKs) rootZone.add_trusted_key(key);
-    if (!rootZone.verify_rrset('.', TYPE_DNSKEY, KeyVerifyMode.KSK)) {
-        return {
-            verdict: Verdict.Bogus,
-            bogusAt: '.',
-            bogusReason: 'root DNSKEY rrset signature did not verify',
-        };
+    trust_keys(rootZone, rootKSKs);
+    const check = check_rrset(rootZone, '.', TYPE_DNSKEY, KeyVerifyMode.KSK, result);
+    if (!check.ok) {
+        return bogus_outcome('.', 'root DNSKEY rrset signature did not verify', check.code);
     }
     if (!zone_already_in_chain(result, '.')) {
-        result.chain.push(summarize_zone('.', rootZone, rootKSK));
+        result.chain.push(summarize_zone('.', rootZone, rootKSKs[0]));
+    }
+    return rootZone;
+}
+
+// Descent is the outcome of one descend_into step.
+type Descent =
+    | { status: 'descended'; zone: DNSSecZone; ksk: DNSKey }
+    | { status: 'insecure'; reason: string }
+    | { status: 'no-cut' }
+    | { status: 'bogus'; reason: string; code?: ReasonCode };
+
+// descend_into walks one level of the chain: load and verify the DS
+// rrset for childName at parentZone, then load and verify the DNSKEY
+// rrset for childName, returning the child zone if both verify.
+//
+// When the parent returns no DS records, it looks in the same response
+// for an NSEC / NSEC3 proof of no-DS: a valid proof makes childName an
+// Insecure delegation; without one childName is not a zone cut, so a
+// DS query at a non-cut name (e.g. qname itself) still proceeds to leaf
+// resolution.
+async function descend_into(v: Verifier, parentZone: DNSSecZone, parentName: string, childName: string,
+                            result: Result, signal?: AbortSignal): Promise<Descent> {
+    const dsCount = await load_records(v, parentZone, childName, TYPE_DS, result, signal);
+    if (dsCount === 0) return no_ds_descent(parentZone, childName);
+
+    const dsCheck = check_rrset(parentZone, childName, TYPE_DS, KeyVerifyMode.None, result);
+    if (!dsCheck.ok) {
+        return { status: 'bogus', reason: `DS rrset for ${childName} did not verify under ${parentName}`, code: dsCheck.code };
     }
 
-    // Step 2: descend through each label boundary that is actually
-    // a zone cut. Empty non-terminals (no DS, but a deeper name IS
-    // a cut) must be skipped, not treated as the leaf.
-    let currentZone = rootZone;
-    let currentName = '.';
-    for (const childName of descendant_zones(qname)) {
-        check_aborted(signal);
+    // The child zone is parented at parentZone so that
+    // verify_delegation_signer finds the DS records there.
+    const zone = new_zone(v);
+    zone.parent = parentZone;
+    await load_records(v, zone, childName, TYPE_DNSKEY, result, signal);
 
-        const dsCount = await load_records(v, currentZone, childName, TYPE_DS, result, signal);
-        if (dsCount === 0) {
-            // A name below a DNAME is never a zone cut (RFC 6672 §2.4),
-            // and denial records for the DNAME owner say nothing about
-            // it (RFC 6840 §4.1). Leaf resolution follows the DNAME.
-            if (below_dname(currentZone, childName)) continue;
-            // Before treating childName as a non-cut, see whether
-            // the resolver also handed us NSEC / NSEC3 records that
-            // prove no DS exists at childName (RFC 4035 §5.4 /
-            // RFC 5155 §8.9). A valid proof classifies this
-            // delegation as Insecure; absence of proof keeps the
-            // legacy "continue past non-cut" behaviour so callers
-            // that ask for DS at a non-zone-cut name (e.g. qname
-            // itself) still descend correctly.
-            const proof = prove_no_ds(currentZone, childName);
-            if (proof) {
-                return {
-                    verdict: Verdict.Insecure,
-                    insecureAt: childName,
-                    insecureReason: proof,
-                };
-            }
-            continue;
-        }
+    // Only the keys matching the validated DS rrset are trusted.
+    const match = match_ksks_with_ds(zone, parentZone, parentName, childName);
+    if (!Array.isArray(match)) return { status: 'bogus', ...match };
+    trust_keys(zone, match);
 
-        if (!currentZone.verify_rrset(childName, TYPE_DS)) {
-            return {
-                verdict: Verdict.Bogus,
-                bogusAt: childName,
-                bogusReason: `DS rrset for ${childName} did not verify under ${currentName}`,
-            };
-        }
-
-        const childZone = new_zone(v);
-        childZone.parent = currentZone;
-        await load_records(v, childZone, childName, TYPE_DNSKEY, result, signal);
-
-        // Only the keys matching the validated DS rrset are trusted.
-        const childKSKs = match_ksks_with_ds(childZone, currentZone, childName);
-        if (childKSKs.length === 0) {
-            return {
-                verdict: Verdict.Bogus,
-                bogusAt: childName,
-                bogusReason: `no DNSKEY at ${childName} matched a DS record in ${currentName}`,
-            };
-        }
-        const childKSK = childKSKs[0];
-        for (const key of childKSKs) childZone.add_trusted_key(key);
-        if (!childZone.verify_rrset(childName, TYPE_DNSKEY, KeyVerifyMode.KSK)) {
-            return {
-                verdict: Verdict.Bogus,
-                bogusAt: childName,
-                bogusReason: `DNSKEY rrset for ${childName} did not verify under its own KSK`,
-            };
-        }
-
-        if (!zone_already_in_chain(result, childName)) {
-            result.chain.push(summarize_zone(childName, childZone, childKSK));
-        }
-        currentZone = childZone;
-        currentName = childName;
+    const dnskeyCheck = check_rrset(zone, childName, TYPE_DNSKEY, KeyVerifyMode.KSK, result);
+    if (!dnskeyCheck.ok) {
+        return { status: 'bogus', reason: `DNSKEY rrset for ${childName} did not verify under its own KSK`, code: dnskeyCheck.code };
     }
+    return { status: 'descended', zone, ksk: match[0] };
+}
 
-    check_aborted(signal);
-    return resolve_leaf(v, currentZone, currentName, qname, qtype, result, signal);
+// no_ds_descent classifies a childName for which parentZone returned no
+// DS: an Insecure delegation when a no-DS proof verifies, otherwise not
+// a zone cut.
+function no_ds_descent(parentZone: DNSSecZone, childName: string): Descent {
+    // A name below a DNAME is never a zone cut (RFC 6672 §2.4), and
+    // denial records for the DNAME owner say nothing about it
+    // (RFC 6840 §4.1). Leaf resolution follows the DNAME.
+    if (below_dname(parentZone, childName)) return { status: 'no-cut' };
+    // RFC 4035 §5.4 / RFC 5155 §8.9: a valid proof that no DS exists
+    // classifies this delegation as Insecure.
+    const proof = prove_no_ds(parentZone, childName);
+    return proof ? { status: 'insecure', reason: proof } : { status: 'no-cut' };
+}
+
+// trust_keys authenticates each of keys as a KSK of z.
+function trust_keys(z: DNSSecZone, keys: DNSKey[]): void {
+    for (const key of keys) z.add_trusted_key(key);
 }
 
 // resolve_leaf handles the final step of a hop: load qname/qtype
@@ -242,12 +283,10 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
 async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: string, qname: string, qtype: number, result: Result, signal?: AbortSignal): Promise<HopOutcome> {
     const added = await load_records(v, currentZone, qname, qtype, result, signal);
     if (added > 0) {
-        if (!currentZone.verify_rrset(qname, qtype)) {
-            return {
-                verdict: Verdict.Bogus,
-                bogusAt: currentName,
-                bogusReason: `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`,
-            };
+        const check = check_rrset(currentZone, qname, qtype, KeyVerifyMode.None, result);
+        if (!check.ok) {
+            return bogus_outcome(currentName,
+                `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`, check.code);
         }
         const answer = build_answer(currentZone, qname, qtype);
         // Verified. RFC 4035 §5.3.2: if the covering RRSIG's Labels
@@ -259,11 +298,9 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
         if (wc) {
             const proof = prove_qname_non_existence(currentZone, wc.nextCloser);
             if (!proof) {
-                return {
-                    verdict: Verdict.Bogus,
-                    bogusAt: currentName,
-                    bogusReason: `wildcard synthesis at ${wc.source} lacks non-existence proof for ${wc.nextCloser}`,
-                };
+                return bogus_outcome(currentName,
+                    `wildcard synthesis at ${wc.source} lacks non-existence proof for ${wc.nextCloser}`,
+                    ReasonCode.WildcardProofMissing);
             }
             return {
                 verdict: Verdict.Secure,
@@ -287,9 +324,9 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
     // (RFC 6672 §5.3.1), so trying CNAME first would report the signed
     // DNAME as Bogus. The target is derived from the DNAME; the
     // synthesised CNAME is not used.
-    const dname = try_dname(currentZone, currentName, qname);
+    const dname = try_dname(currentZone, currentName, qname, result);
     if (dname) return dname;
-    const cname = try_cname(currentZone, currentName, qname);
+    const cname = try_cname(currentZone, currentName, qname, result);
     if (cname) return cname;
 
     // No alias — fall back to negative-existence proofs.
@@ -477,15 +514,23 @@ function summarize_zone(zoneName: string, z: DNSSecZone, ksk: DNSKey): ZoneStep 
 
 // Returns every DNSKEY in childZone whose DS digest matches one of the
 // DS records at parentZone under childName (the caller has validated
-// that DS rrset). The SEP flag is not required (RFC 4034 §2.1.1).
-function match_ksks_with_ds(childZone: DNSSecZone, parentZone: DNSSecZone, childName: string): DNSKey[] {
+// that DS rrset), or why there is none: the child has no DNSKEY rrset
+// (no-dnskey), or no key matches (ds-mismatch). The SEP flag is not
+// required (RFC 4034 §2.1.1).
+function match_ksks_with_ds(childZone: DNSSecZone, parentZone: DNSSecZone, parentName: string,
+                            childName: string): DNSKey[] | { reason: string; code: ReasonCode } {
+    if (childZone.find_rrset(childName, TYPE_DNSKEY).length === 0) {
+        return { reason: `no DNSKEY records at ${childName}`, code: ReasonCode.NoDNSKEY };
+    }
     const dses = parentZone.find_rrset(childName, TYPE_DS)
         .map((rr) => parentZone.handler(rr))
         .filter((h): h is DNSRR_DS => h instanceof DNSRR_DS);
-    return childZone.find_dnskeys(childName).filter((key) =>
+    const ksks = childZone.find_dnskeys(childName).filter((key) =>
         dses.some((ds) =>
             ds.key_tag === key.key_tag && ds.algorithm === key.algorithm &&
             ds.verify_digest(key.get_ds_digest_data())));
+    if (ksks.length > 0) return ksks;
+    return { reason: `no DNSKEY at ${childName} matched a DS record in ${parentName}`, code: ReasonCode.DSMismatch };
 }
 
 // Computes the DS digest from a candidate DNSKEY and compares it
