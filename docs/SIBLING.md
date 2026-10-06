@@ -80,6 +80,7 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `dnssec/canon.go`                         | `dnssec/dnssec_util.ts`              | Canonical-name compare + `LabelCount` / `LastNLabels` (UP-004) |
 | `dnssec/crypto.go`                        | `dnssec/crypto.ts`                   | Signature verification |
 | `dnssec/handlers.go`                      | `dnssec/handlers.ts`                 | DNSSEC handler registration |
+| `dnssec/sigcheck.go`                      | `dnssec/sigcheck.ts`                 | `SigStatus`, `SigResult`, `rrset_verified` behind `DNSSecZone.check_rrsig` / `check_rrset` |
 | `dnssec/signer/key.go`                    | `dnssec/signer/key.ts`               | `Key`, `generate_key`, `new_key`, `parse_pkcs8_pem`, DNSKEY flag constants (UP-013) |
 | `dnssec/signer/bind.go`                   | `dnssec/signer/bind.ts`              | `parse_bind_private`, on top of `dnssec_key_loader.ts` (UP-013) |
 | `dnssec/signer/ds.go`                     | `dnssec/signer/ds.ts`                | `Key.ds`, `Key.anchor_ds`, `root_anchors` (UP-013) |
@@ -87,7 +88,7 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `dnssec/signer/nsec3.go`                  | `dnssec/signer/nsec3.ts`             | `build_nsec3`, `NSEC3Options` (UP-018) |
 | `dnssec/signer/sign.go`                   | `dnssec/signer/sign.ts`              | `sign_zone`, `SignOptions`, `rrsig_labels` (in `names.ts`) (UP-013) |
 | (sentinel errors in `dnssec/signer/key.go`) | `dnssec/signer/errors.ts`          | `SignerError`, `SignerKeyFormatError`, `SignerUnsupportedAlgorithmError` |
-| `verifier/`                               | `verifier/`                          | Chain-of-trust walker with pluggable `Resolver` (UP-001, UP-005, UP-006), `Cache` (UP-008), `Result.answer` (UP-015) |
+| `verifier/`                               | `verifier/`                          | Chain-of-trust walker with pluggable `Resolver` (UP-001, UP-005, UP-006), `Cache` (UP-008), `Result.answer` (UP-015); `reason.ts` (`ReasonCode`, `result_error`), `sigcheck.ts` (`ZoneStep.signatures`) mirror the same-named Go files |
 | `dnssec/anchors.go`                       | `dnssec/dnssec_key_loader.ts`, `dnssec/root_anchors.ts` | Root trust anchors |
 | `resolver/resolver.go`                    | `resolver/response.ts`               | `Response { records, ad, rcode }` (UP-009) |
 | `resolver/doh/`                           | `resolver/doh/`                      | RFC 8484 DoH client with provider failover (UP-007) |

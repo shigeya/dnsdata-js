@@ -4,6 +4,7 @@
 
 import { Verdict } from './verdict';
 import type { ReasonCode } from './reason';
+import type { SigStatus } from '../dnssec/sigcheck';
 
 export interface KeySummary {
     keyTag: number;
@@ -20,8 +21,42 @@ export interface DSSummary {
 export interface ZoneStep {
     zone: string;
     dnskeys?: KeySummary[];
+    // The DS records at the parent that authorised the descent into the
+    // zone (absent for the root).
     dsDigests?: DSSummary[];
+    // The DNSKEY that verified the zone's DNSKEY rrset (the KSK). Absent
+    // if validation did not reach this step, including on the step of
+    // the zone where a Bogus chain failed.
     signedBy?: KeySummary;
+    // signatures lists the outcome of every RRSIG examined for this
+    // zone, in the order checked: the DS rrset that authorised the
+    // descent into the zone (signed by the parent; none for the root),
+    // the zone's DNSKEY rrset, then the positive rrsets the walker
+    // verified in the zone (the answer, CNAME and DNAME rrsets). The
+    // NSEC / NSEC3 records of denial proofs are not listed. A Bogus
+    // chain ends with a step for the zone where it failed, holding the
+    // checks that failed (dnskeys and dsDigests may then be partial).
+    // Absent when empty.
+    signatures?: SigCheck[];
+}
+
+// SigCheck is the outcome of checking one RRSIG. result is the
+// classification DNSSecZone.check_rrsig makes, shared with
+// Result.reasonCode. A KSK's RRSIG over the DNSKEY rrset counts as
+// verified once the KSK matches its DS (or trust anchor).
+export interface SigCheck {
+    // name and rrType identify the covered rrset (rrType is the RRSIG's
+    // type covered).
+    name:       string;
+    rrType:     number;
+    keyTag:     number;
+    algorithm:  number;
+    signer:     string;
+    // The RRSIG's validity window, as RFC 3339 UTC strings
+    // ("2026-01-01T00:00:00Z", Go's time.Time in JSON).
+    inception:  string;
+    expiration: string;
+    result:     SigStatus;
 }
 
 // Presentation-form RR values keyed by zone / owner so consumers

@@ -11,7 +11,9 @@ import { DNSKey, DNSRR_DS } from '../dnssec/dnssec_rr';
 import { StringToRRType } from '../types/dns_type_table';
 import { equal_canonical_names } from '../dnssec/dnssec_util';
 import { Verdict, MAX_ALIAS_HOPS, combine_verdicts } from './verdict';
-import { DSSummary, HopOutcome, KeySummary, Result, ZoneStep } from './result';
+import { DSSummary, HopOutcome, KeySummary, Result, SigCheck, ZoneStep } from './result';
+import { SigStatus } from '../dnssec/sigcheck';
+import { add_step, add_zone_sigs } from './sigcheck';
 import {
     VerifierChainTimeoutError,
     VerifierInvalidQNameError,
@@ -157,11 +159,12 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
     for (const childName of descendant_zones(qname)) {
         check_aborted(signal);
         const d = await descend_into(v, currentZone, currentName, childName, result, signal);
+        if (d.status === 'descended' || d.status === 'bogus') {
+            add_step(result, summarize_zone(childName, d.zone ?? null, currentZone,
+                d.status === 'descended' ? d.ksk : null, d.sigs));
+        }
         switch (d.status) {
         case 'descended':
-            if (!zone_already_in_chain(result, childName)) {
-                result.chain.push(summarize_zone(childName, d.zone, currentZone, d.ksk));
-            }
             currentZone = d.zone;
             currentName = childName;
             break;
@@ -198,26 +201,41 @@ async function validate_root(v: Verifier, result: Result, signal?: AbortSignal):
     // as verified only through an RRSIG made by one of them.
     const rootKSKs = match_ksks_with_anchors(v, rootZone);
     if (rootKSKs.length === 0) {
+        add_step(result, summarize_zone('.', rootZone, null, null, []));
         return bogus_outcome('.', 'root KSK does not match any configured trust anchor',
             ReasonCode.TrustAnchorMismatch);
     }
     trust_keys(rootZone, rootKSKs);
     const check = check_rrset(rootZone, '.', TYPE_DNSKEY, KeyVerifyMode.KSK, result);
     if (!check.ok) {
+        add_step(result, summarize_zone('.', rootZone, null, null, check.sigs));
         return bogus_outcome('.', 'root DNSKEY rrset signature did not verify', check.code);
     }
-    if (!zone_already_in_chain(result, '.')) {
-        result.chain.push(summarize_zone('.', rootZone, null, rootKSKs[0]));
-    }
+    add_step(result, summarize_zone('.', rootZone, null, signing_ksk(rootKSKs, check.sigs), check.sigs));
     return rootZone;
 }
 
+// signing_ksk returns the authenticated KSK that signed a zone's DNSKEY
+// rrset: the first of ksks named by a verified RRSIG in sigs (the DNSKEY
+// rrset's checks), or the first of ksks when none is (which a verified
+// rrset rules out).
+function signing_ksk(ksks: DNSKey[], sigs: readonly SigCheck[]): DNSKey {
+    for (const s of sigs) {
+        if (s.result !== SigStatus.Verified) continue;
+        const k = ksks.find((key) => key.key_tag === s.keyTag && key.algorithm === s.algorithm);
+        if (k !== undefined) return k;
+    }
+    return ksks[0];
+}
+
 // Descent is the outcome of one descend_into step.
+// sigs are the DS, then DNSKEY, RRSIG checks made; zone is the child
+// zone once its DNSKEYs are loaded.
 type Descent =
-    | { status: 'descended'; zone: DNSSecZone; ksk: DNSKey }
+    | { status: 'descended'; zone: DNSSecZone; ksk: DNSKey; sigs: SigCheck[] }
     | { status: 'insecure'; reason: string }
     | { status: 'no-cut' }
-    | { status: 'bogus'; reason: string; code?: ReasonCode };
+    | { status: 'bogus'; reason: string; code?: ReasonCode; zone?: DNSSecZone; sigs: SigCheck[] };
 
 // descend_into walks one level of the chain: load and verify the DS
 // rrset for childName at parentZone, then load and verify the DNSKEY
@@ -235,7 +253,10 @@ async function descend_into(v: Verifier, parentZone: DNSSecZone, parentName: str
 
     const dsCheck = check_rrset(parentZone, childName, TYPE_DS, KeyVerifyMode.None, result);
     if (!dsCheck.ok) {
-        return { status: 'bogus', reason: `DS rrset for ${childName} did not verify under ${parentName}`, code: dsCheck.code };
+        return {
+            status: 'bogus', reason: `DS rrset for ${childName} did not verify under ${parentName}`,
+            code: dsCheck.code, sigs: dsCheck.sigs,
+        };
     }
 
     // The child zone is parented at parentZone so that
@@ -246,14 +267,18 @@ async function descend_into(v: Verifier, parentZone: DNSSecZone, parentName: str
 
     // Only the keys matching the validated DS rrset are trusted.
     const match = match_ksks_with_ds(zone, parentZone, parentName, childName);
-    if (!Array.isArray(match)) return { status: 'bogus', ...match };
+    if (!Array.isArray(match)) return { status: 'bogus', ...match, zone, sigs: dsCheck.sigs };
     trust_keys(zone, match);
 
     const dnskeyCheck = check_rrset(zone, childName, TYPE_DNSKEY, KeyVerifyMode.KSK, result);
+    const sigs = [...dsCheck.sigs, ...dnskeyCheck.sigs];
     if (!dnskeyCheck.ok) {
-        return { status: 'bogus', reason: `DNSKEY rrset for ${childName} did not verify under its own KSK`, code: dnskeyCheck.code };
+        return {
+            status: 'bogus', reason: `DNSKEY rrset for ${childName} did not verify under its own KSK`,
+            code: dnskeyCheck.code, zone, sigs,
+        };
     }
-    return { status: 'descended', zone, ksk: match[0] };
+    return { status: 'descended', zone, ksk: signing_ksk(match, dnskeyCheck.sigs), sigs };
 }
 
 // no_ds_descent classifies a childName for which parentZone returned no
@@ -284,6 +309,7 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
     const added = await load_records(v, currentZone, qname, qtype, result, signal);
     if (added > 0) {
         const check = check_rrset(currentZone, qname, qtype, KeyVerifyMode.None, result);
+        add_zone_sigs(result, currentName, check.sigs);
         if (!check.ok) {
             return bogus_outcome(currentName,
                 `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`, check.code);
@@ -472,19 +498,24 @@ function push_evidence(into: Record<string, string[]>, key: string, value: strin
 }
 
 // summarize_zone collects a ZoneStep for the result chain. The DNSKEYs
-// are read from z, the DS records from parent, which the descent loaded
-// them into (none for the root).
-function summarize_zone(zoneName: string, z: DNSSecZone, parent: DNSSecZone | null, ksk: DNSKey): ZoneStep {
+// are read from z (null when the walk did not load them), the DS
+// records from parent, which the descent loaded them into (null for the
+// root). ksk is null on the step of a zone that did not validate.
+function summarize_zone(zoneName: string, z: DNSSecZone | null, parent: DNSSecZone | null, ksk: DNSKey | null,
+                        sigs: SigCheck[]): ZoneStep {
     const step: ZoneStep = { zone: zoneName };
-    const dnskeys = summarize_dnskeys(zoneName, z);
+    const dnskeys = z === null ? [] : summarize_dnskeys(zoneName, z);
     if (dnskeys.length > 0) step.dnskeys = dnskeys;
     const dsDigests = parent === null ? [] : summarize_ds(zoneName, parent);
     if (dsDigests.length > 0) step.dsDigests = dsDigests;
-    step.signedBy = {
-        keyTag: ksk.key_tag,
-        algorithm: ksk.algorithm,
-        sep: ksk.is_secure_entry_point(),
-    };
+    if (ksk !== null) {
+        step.signedBy = {
+            keyTag: ksk.key_tag,
+            algorithm: ksk.algorithm,
+            sep: ksk.is_secure_entry_point(),
+        };
+    }
+    if (sigs.length > 0) step.signatures = sigs;
     return step;
 }
 
@@ -554,13 +585,3 @@ function below_dname(z: DNSSecZone, name: string): boolean {
         !equal_canonical_names(anc, name) && z.find_rrset(anc, TYPE_DNAME).length > 0);
 }
 
-// zone_already_in_chain reports whether result.chain already contains
-// a ZoneStep for zoneName. Used during alias chasing so multiple hops
-// over the same parent zones (e.g. "." and "com.") don't duplicate
-// entries.
-function zone_already_in_chain(result: Result, zoneName: string): boolean {
-    for (const step of result.chain) {
-        if (step.zone === zoneName) return true;
-    }
-    return false;
-}

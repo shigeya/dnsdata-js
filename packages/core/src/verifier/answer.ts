@@ -11,10 +11,10 @@ import { WireBuilder } from '../wire/dns_wire_util';
 import { Answer, AnswerRecord, AnswerSignature } from './result';
 import { VerifierError } from './errors';
 import { error_message } from './verifier';
+import { rfc3339 } from './sigcheck';
 
 // Octets of RDLENGTH in front of the RDATA written by get_wire_body.
 const RDLENGTH_OCTETS = 2;
-const MILLISECONDS_PER_SECOND = 1000;
 
 // build_answer describes the (qname, qtype) RRset of z, which has just
 // verified, with every RRSIG over it that verifies on its own.
@@ -46,10 +46,4 @@ export function build_answer(z: DNSSecZone, qname: string, qtype: number): Answe
             expiration: rfc3339(sig.expire),
         }));
     return { name: qname, type: qtype, records, signatures };
-}
-
-// rfc3339 formats Unix seconds as Go's time.Time JSON does for a UTC
-// time with no fractional second: "2026-01-01T00:00:00Z".
-function rfc3339(unixSeconds: number): string {
-    return new Date(unixSeconds * MILLISECONDS_PER_SECOND).toISOString().replace('.000Z', 'Z');
 }

@@ -6,7 +6,8 @@
 import { DNSSecZone, KeyVerifyMode } from '../dnssec/dnssec_zone';
 import { SigResult, SigStatus, rrset_verified } from '../dnssec/sigcheck';
 import { Verdict } from './verdict';
-import { HopOutcome, Result } from './result';
+import { HopOutcome, Result, SigCheck } from './result';
+import { sig_checks } from './sigcheck';
 import {
     VerifierBogusError, VerifierDSMismatchError, VerifierError, VerifierNoDNSKEYError, VerifierNoDSError,
     VerifierSigExpiredError, VerifierSigInvalidError, VerifierTrustAnchorMismatchError,
@@ -133,6 +134,8 @@ export interface RRSetCheck {
     ok: boolean;
     // why it failed, when !ok
     code?: ReasonCode;
+    // one per RRSIG examined
+    sigs: SigCheck[];
 }
 
 // check_rrset verifies (name, rrtype) in z under mode with "any-valid"
@@ -145,7 +148,8 @@ export function check_rrset(z: DNSSecZone, name: string, rrtype: number, mode: K
                             result: Result): RRSetCheck {
     const results = z.check_rrset(name, rrtype, mode);
     const { verified, error } = rrset_verified(results);
-    const check: RRSetCheck = verified ? { ok: true } : { ok: false, code: sig_failure_code(results) };
+    const sigs = sig_checks(name, results);
+    const check: RRSetCheck = verified ? { ok: true, sigs } : { ok: false, code: sig_failure_code(results), sigs };
     if (error === undefined) return check;
     const message = `verifier: ${name}/${qtype_mnemonic(rrtype)}: ${error.message}`;
     if (check.code === ReasonCode.UnsupportedAlgorithm) {

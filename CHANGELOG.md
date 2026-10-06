@@ -75,6 +75,12 @@ version?" question answerable at a glance.
 - The handler cached on a `ResourceRecord` is tied to the registry that
   built it and is never returned for another registry, so Verifiers
   with different registries can share one cache.
+- A Bogus result's `chain` now ends with a step for the zone where
+  validation failed (root DNSKEY, DS or DNSKEY of the descent), with
+  its DNSKEYs / DS digests as far as they were loaded, the failing
+  `signatures`, and no `signedBy`. Before, the chain stopped at the
+  last zone that validated. `signedBy` names the trusted KSK whose
+  RRSIG verified the DNSKEY rrset, rather than the first trusted one.
 
 ### Added
 
@@ -143,6 +149,16 @@ version?" question answerable at a glance.
   DNSKEY, answer, CNAME or DNAME rrset (an rrset without an encoder, a
   malformed key) now reject as `VerifierError`, with the cause's
   message, instead of as the raw error.
+- `ZoneStep.signatures` (absent when empty): one `SigCheck` per RRSIG
+  examined at the zone, in check order: the DS rrset of the descent
+  into the zone, the DNSKEY rrset, then the answer / CNAME / DNAME
+  rrsets verified there (denial NSEC / NSEC3 records are not listed).
+  Every RRSIG over those rrsets is checked and listed, not only the
+  first that verifies; verdicts are unchanged. `SigCheck` is `{ name,
+  rrType, keyTag, algorithm, signer, inception, expiration, result }`,
+  the times as RFC 3339 UTC strings and `result` a `SigStatus` value.
+  A step an earlier alias hop added only gains the checks it lacks.
+  Ports dnsdata-go `6cef240`.
 - `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
   a zone treats as authenticated from outside it, by owner and RDATA.
 - `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every

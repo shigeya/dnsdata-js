@@ -7,6 +7,7 @@ import { equal_canonical_names } from '../dnssec/dnssec_util';
 import { Verdict } from './verdict';
 import { HopOutcome, Result } from './result';
 import { ReasonCode, bogus_outcome, check_rrset } from './reason';
+import { add_zone_sigs } from './sigcheck';
 import { normalize_qname } from './verifier';
 import { ancestors_of, canon_labels_trim } from './leaf_negative';
 
@@ -30,6 +31,7 @@ export function try_cname(currentZone: DNSSecZone, currentName: string, qname: s
         return bogus_outcome(qname, 'CNAME target is empty', ReasonCode.AliasTargetInvalid);
     }
     const check = check_rrset(currentZone, qname, TYPE_CNAME, KeyVerifyMode.None, result);
+    add_zone_sigs(result, currentName, check.sigs);
     if (!check.ok) {
         return bogus_outcome(currentName, `RRSIG over ${qname}/CNAME did not verify`, check.code);
     }
@@ -66,6 +68,7 @@ export function try_dname(currentZone: DNSSecZone, currentName: string, qname: s
             return bogus_outcome(anc, 'DNAME target is empty', ReasonCode.AliasTargetInvalid);
         }
         const check = check_rrset(currentZone, anc, TYPE_DNAME, KeyVerifyMode.None, result);
+        add_zone_sigs(result, currentName, check.sigs);
         if (!check.ok) {
             return bogus_outcome(currentName, `RRSIG over ${anc}/DNAME did not verify`, check.code);
         }
