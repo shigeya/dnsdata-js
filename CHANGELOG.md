@@ -148,6 +148,13 @@ version?" question answerable at a glance.
 - `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every
   matching DNSKEY. `find_dnskey` still returns the first one.
 
+### Fixed
+
+- `ZoneStep.dsDigests` was always absent: it was read from the child
+  zone, while the DS records live in the parent's response. It now
+  lists the DS records that authorised the descent into the zone (none
+  for the root). Ports dnsdata-go `0f9f5cb`.
+
 ## [0.9.0] — 2026-10-05
 
 Coordinated release with dnsdata-go v0.9.0 (port-back of UP-020). A

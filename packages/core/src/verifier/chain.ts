@@ -11,7 +11,7 @@ import { DNSKey, DNSRR_DS } from '../dnssec/dnssec_rr';
 import { StringToRRType } from '../types/dns_type_table';
 import { equal_canonical_names } from '../dnssec/dnssec_util';
 import { Verdict, MAX_ALIAS_HOPS, combine_verdicts } from './verdict';
-import { Result, ZoneStep, HopOutcome } from './result';
+import { DSSummary, HopOutcome, KeySummary, Result, ZoneStep } from './result';
 import {
     VerifierChainTimeoutError,
     VerifierInvalidQNameError,
@@ -160,7 +160,7 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
         switch (d.status) {
         case 'descended':
             if (!zone_already_in_chain(result, childName)) {
-                result.chain.push(summarize_zone(childName, d.zone, d.ksk));
+                result.chain.push(summarize_zone(childName, d.zone, currentZone, d.ksk));
             }
             currentZone = d.zone;
             currentName = childName;
@@ -207,7 +207,7 @@ async function validate_root(v: Verifier, result: Result, signal?: AbortSignal):
         return bogus_outcome('.', 'root DNSKEY rrset signature did not verify', check.code);
     }
     if (!zone_already_in_chain(result, '.')) {
-        result.chain.push(summarize_zone('.', rootZone, rootKSKs[0]));
+        result.chain.push(summarize_zone('.', rootZone, null, rootKSKs[0]));
     }
     return rootZone;
 }
@@ -471,45 +471,37 @@ function push_evidence(into: Record<string, string[]>, key: string, value: strin
     else into[key] = [value];
 }
 
-function summarize_zone(zoneName: string, z: DNSSecZone, ksk: DNSKey): ZoneStep {
+// summarize_zone collects a ZoneStep for the result chain. The DNSKEYs
+// are read from z, the DS records from parent, which the descent loaded
+// them into (none for the root).
+function summarize_zone(zoneName: string, z: DNSSecZone, parent: DNSSecZone | null, ksk: DNSKey): ZoneStep {
     const step: ZoneStep = { zone: zoneName };
-
-    const dnskeyRRs = z.find_rrset(zoneName, TYPE_DNSKEY);
-    if (dnskeyRRs.length > 0) {
-        step.dnskeys = [];
-        for (const rr of dnskeyRRs) {
-            const h = z.handler(rr);
-            if (h instanceof DNSKey) {
-                step.dnskeys.push({
-                    keyTag: h.key_tag,
-                    algorithm: h.algorithm,
-                    sep: h.is_secure_entry_point(),
-                });
-            }
-        }
-    }
-
-    const dsRRs = z.find_rrset(zoneName, TYPE_DS);
-    if (dsRRs.length > 0) {
-        step.dsDigests = [];
-        for (const rr of dsRRs) {
-            const h = z.handler(rr);
-            if (h instanceof DNSRR_DS) {
-                step.dsDigests.push({
-                    keyTag: h.key_tag,
-                    algorithm: h.algorithm,
-                    digestType: h.digest_type,
-                });
-            }
-        }
-    }
-
+    const dnskeys = summarize_dnskeys(zoneName, z);
+    if (dnskeys.length > 0) step.dnskeys = dnskeys;
+    const dsDigests = parent === null ? [] : summarize_ds(zoneName, parent);
+    if (dsDigests.length > 0) step.dsDigests = dsDigests;
     step.signedBy = {
         keyTag: ksk.key_tag,
         algorithm: ksk.algorithm,
         sep: ksk.is_secure_entry_point(),
     };
     return step;
+}
+
+// summarize_dnskeys lists the DNSKEYs at zoneName held by z.
+function summarize_dnskeys(zoneName: string, z: DNSSecZone): KeySummary[] {
+    return z.find_rrset(zoneName, TYPE_DNSKEY)
+        .map((rr) => z.handler(rr))
+        .filter((h): h is DNSKey => h instanceof DNSKey)
+        .map((h) => ({ keyTag: h.key_tag, algorithm: h.algorithm, sep: h.is_secure_entry_point() }));
+}
+
+// summarize_ds lists the DS records for zoneName held by parent.
+function summarize_ds(zoneName: string, parent: DNSSecZone): DSSummary[] {
+    return parent.find_rrset(zoneName, TYPE_DS)
+        .map((rr) => parent.handler(rr))
+        .filter((h): h is DNSRR_DS => h instanceof DNSRR_DS)
+        .map((h) => ({ keyTag: h.key_tag, algorithm: h.algorithm, digestType: h.digest_type }));
 }
 
 // Returns every DNSKEY in childZone whose DS digest matches one of the
