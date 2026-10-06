@@ -39,6 +39,15 @@ export class DNSZoneParseError extends DNSZonePresentationFormatError {
     }
 };
 
+// A DNSKEY uses a DNSSEC algorithm the library does not implement, so a
+// signature made with it cannot be checked. Mirrors dnsdata-go
+// `dnssec.ErrUnsupportedAlgorithm`.
+export class DNSSecUnsupportedAlgorithmError extends CustomError {
+    public constructor(message? : string) {
+        super(message);
+    }
+};
+
 // Wire format errors (RFC 1035 §2.3.4 / §4.1.4): label or name overflow,
 // invalid length octets, and truncated input.
 export class DNSWireError extends CustomError {

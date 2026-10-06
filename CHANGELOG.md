@@ -95,6 +95,21 @@ version?" question answerable at a glance.
   `handler(rr)`: a zone resolves its DNSKEY / RRSIG / DS / NSEC / NSEC3
   handlers, and the RDATA of its digest targets, through its registry.
 - `VerifierOptions.registry` and `Verifier.registry`.
+- `SigStatus` (`Verified`, `Expired`, `NotYetValid`,
+  `UnsupportedAlgorithm`, `NoMatchingKey`, `Invalid`, with the values
+  `verified`, `expired`, `not-yet-valid`, `unsupported-algorithm`,
+  `no-matching-key`, `invalid`), `DNSSecZone.check_rrsig` (one RRSIG:
+  why it failed, as `SigResult { rrsig, status, error? }`),
+  `DNSSecZone.check_rrset` (every RRSIG over an rrset) and
+  `rrset_verified` (folds those into `verify_rrset`'s answer). Ports
+  dnsdata-go `5d507e9`. `verify_rrsig` / `verify_rrset` are now
+  `check_rrsig` / `check_rrset` reduced to a bool; their verdicts are
+  unchanged. They throw an error met while checking (a malformed key,
+  an rrset that does not encode) only when no RRSIG verified, rather
+  than as soon as it is met.
+- `DNSSecUnsupportedAlgorithmError`: a key's algorithm is not
+  implemented (`SigStatus.UnsupportedAlgorithm`). Ed448 is still
+  verified, unlike in dnsdata-go.
 - `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
   a zone treats as authenticated from outside it, by owner and RDATA.
 - `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every

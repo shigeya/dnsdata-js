@@ -11,6 +11,7 @@ import { GENERIC_RDATA_MARKER } from '../zone/generic';
 import { DNSZoneRDataFormatError } from '../dns_exception';
 import { DNSKey, RRSig, DNSRR_DS } from './dnssec_rr';
 import { label_count, last_n_labels } from './dnssec_util';
+import { SigResult, SigStatus, as_error, rrset_verified, verify_with_any } from './sigcheck';
 // As of P8, RR handler registration is opt-in via registerAllHandlers()
 // (or the per-pkg register_dnssec_handlers / register_legacy_handlers
 // functions). Importing this file no longer triggers any registration.
@@ -97,12 +98,14 @@ export class DNSSecZone extends Zone {
         this._now = now;
     }
 
-    // within_validity reports whether rrsig's window contains the
-    // zone's clock, or true when no clock is set.
-    private within_validity(rrsig: RRSig): boolean {
-        if (this._now === null) return true;
+    // validity_status places the zone's clock against rrsig's window
+    // (both ends inclusive). Verified means inside, or no clock set.
+    private validity_status(rrsig: RRSig): SigStatus {
+        if (this._now === null) return SigStatus.Verified;
         const t = Math.floor(this._now().getTime() / MILLISECONDS_PER_SECOND);
-        return rrsig.inception <= t && t <= rrsig.expire;
+        if (t < rrsig.inception) return SigStatus.NotYetValid;
+        if (t > rrsig.expire) return SigStatus.Expired;
+        return SigStatus.Verified;
     }
 
     // add_sep marks name as a secure entry point. The mark is
@@ -225,65 +228,120 @@ export class DNSSecZone extends Zone {
         return out.build();
     }
 
-    // Verify a single RRSIG. A signature outside its validity window
-    // fails when a clock is set (see [set_clock]).
+    // check_rrsig checks one RRSIG against the rrset it covers and
+    // reports why it failed. verify_rrsig decides the same, reduced to a
+    // bool.
     //
-    // The RRSIG verifies when some DNSKEY at its signer with its key
-    // tag and algorithm both verifies the signature octets and is
-    // authorised for mode (see [key_authorised]). Every such DNSKEY is
-    // tried, since key tags collide. The SEP flag plays no part
-    // (RFC 4034 §2.1.1).
-    verify_rrsig(name: string, type: number, rrsig: RRSig,
-                 mode: KeyVerifyMode = KeyVerifyMode.None): boolean {
-        if (!this.within_validity(rrsig)) return false;
+    // The checks run in this order, the first failing one deciding the
+    // status: validity window (only with a clock, [set_clock]); key
+    // lookup by signer, key tag and algorithm ([find_dnskeys]); key mode,
+    // which keeps the candidate keys mode accepts ([keys_for_mode];
+    // NoMatchingKey when none is left); signature. The signature is
+    // always checked, in every mode, and verifies when it verifies under
+    // any one of the remaining keys (key tags collide); otherwise the
+    // status and error are those of the first key. The SEP flag plays no
+    // part (RFC 4034 §2.1.1). Ports dnsdata-go `Zone.CheckRRSIG`.
+    check_rrsig(name: string, type: number, rrsig: RRSig,
+                mode: KeyVerifyMode = KeyVerifyMode.None): SigResult {
+        const validity = this.validity_status(rrsig);
+        if (validity !== SigStatus.Verified) return { rrsig, status: validity };
 
         const candidates = this.find_dnskeys(rrsig.signer, rrsig.key_tag, rrsig.algorithm);
-        if (candidates.length === 0) return false;
+        const { keys, error } = this.keys_for_mode(candidates, mode);
+        if (keys.length === 0) return with_error({ rrsig, status: SigStatus.NoMatchingKey }, error);
 
-        const digest_target = this.create_digest_target(rrsig, name, type);
-        if (!digest_target) return false;
-
-        return candidates.some((dnskey) =>
-            dnskey.verify(digest_target, rrsig.signature) && this.key_authorised(dnskey, mode));
+        let digest_target: Uint8Array | null;
+        try {
+            digest_target = this.create_digest_target(rrsig, name, type);
+        } catch (e: unknown) {
+            return { rrsig, status: SigStatus.Invalid, error: as_error(e) };
+        }
+        if (!digest_target) return { rrsig, status: SigStatus.Invalid };
+        return { rrsig, ...verify_with_any(keys, digest_target, rrsig.signature) };
     }
 
-    // key_authorised reports whether dnskey may sign under mode:
-    //   None — any key (the caller has authenticated the DNSKEY rrset).
-    //   KSK  — dnskey itself is authenticated ([verify_ksk]).
-    //   ZSK  — dnskey belongs to a DNSKEY rrset that verifies in KSK
-    //          mode ([verify_zsk]).
-    //   CSK  — either of the above.
-    //   any other value — no key (fails closed).
-    private key_authorised(dnskey: DNSKey, mode: KeyVerifyMode): boolean {
+    // check_rrset checks every RRSIG over (name, type), optionally
+    // filtered by signer, and returns one result per RRSIG in zone
+    // order. Unlike verify_rrset it does not stop at the first signature
+    // that verifies; rrset_verified folds the results into verify_rrset's
+    // answer. Ports dnsdata-go `Zone.CheckRRSet`.
+    check_rrset(name: string, type: number,
+                mode: KeyVerifyMode = KeyVerifyMode.None, signer?: string): SigResult[] {
+        return this.find_rrsigs(name, type, signer).map((rrsig) => this.check_rrsig(name, type, rrsig, mode));
+    }
+
+    // Verify a single RRSIG: check_rrsig reduced to a bool. Throws the
+    // error check_rrsig met (an unsupported algorithm, a malformed key,
+    // an rrset that does not encode) when the RRSIG did not verify.
+    verify_rrsig(name: string, type: number, rrsig: RRSig,
+                 mode: KeyVerifyMode = KeyVerifyMode.None): boolean {
+        const r = this.check_rrsig(name, type, rrsig, mode);
+        if (r.status === SigStatus.Verified) return true;
+        if (r.error !== undefined) throw r.error;
+        return false;
+    }
+
+    // keys_for_mode keeps the candidate keys (all with the RRSIG's
+    // signer, key tag and algorithm) that mode accepts as signers, with
+    // the first error met while deciding. No key's SEP flag is consulted.
+    //   None — every key (the caller has authenticated the DNSKEY rrset).
+    //   KSK  — the authenticated keys ([verify_ksk]).
+    //   ZSK  — every key, when the DNSKEY rrset at the signer (which
+    //          holds them all) verifies in KSK mode; otherwise none.
+    //   CSK  — as ZSK, or else the authenticated keys.
+    //   any other value — none (fails closed).
+    private keys_for_mode(keys: DNSKey[], mode: KeyVerifyMode): { keys: DNSKey[]; error?: Error } {
+        if (keys.length === 0) return { keys: [] };
         switch (mode) {
         case KeyVerifyMode.None:
-            return true;
+            return { keys };
         case KeyVerifyMode.KSK:
-            return this.verify_ksk(dnskey);
-        case KeyVerifyMode.ZSK:
-            return this.verify_zsk(dnskey);
-        case KeyVerifyMode.CSK:
-            return this.verify_ksk(dnskey) || this.verify_zsk(dnskey);
+            return this.authenticated_keys(keys);
+        case KeyVerifyMode.ZSK: {
+            const zsk = this.dnskey_rrset_verified(keys[0].label);
+            return zsk.verified ? { keys } : with_error({ keys: [] }, zsk.error);
+        }
+        case KeyVerifyMode.CSK: {
+            const zsk = this.dnskey_rrset_verified(keys[0].label);
+            if (zsk.verified) return { keys };
+            const ksks = this.authenticated_keys(keys);
+            return with_error({ keys: ksks.keys }, zsk.error ?? ksks.error);
+        }
         default:
-            return false;
+            return { keys: [] };
         }
     }
 
-    // Verify RRSIGs for an RRset (RFC 4035: any-valid semantics)
+    // authenticated_keys keeps the keys verify_ksk accepts, with the
+    // first error met.
+    private authenticated_keys(keys: DNSKey[]): { keys: DNSKey[]; error?: Error } {
+        const out: DNSKey[] = [];
+        let first: Error | undefined;
+        for (const k of keys) {
+            try {
+                if (this.verify_ksk(k)) out.push(k);
+            } catch (e: unknown) {
+                first ??= as_error(e);
+            }
+        }
+        return with_error({ keys: out }, first);
+    }
+
+    // dnskey_rrset_verified checks the DNSKEY rrset at owner in KSK mode.
+    private dnskey_rrset_verified(owner: string): { verified: boolean; error?: Error } {
+        return rrset_verified(this.check_rrset(owner, StringToRRType('DNSKEY'), KeyVerifyMode.KSK));
+    }
+
+    // Verify RRSIGs for an RRset (RFC 4035 §5.3.3: any-valid semantics,
+    // so a failed RRSIG is not evidence that the rrset is bogus while
+    // another verifies): rrset_verified over check_rrset. Throws the
+    // first error met when none verified.
     verify_rrset(name: string, type: number,
                  mode: KeyVerifyMode = KeyVerifyMode.None,
                  signer?: string): boolean {
-        const rrsigs = this.find_rrsigs(name, type, signer);
-        if (rrsigs.length === 0) return false;
-
-        // RFC 4035 Section 5.3.3: An RRset is considered valid if at least
-        // one RRSIG can be validated. A resolver should not treat a failed
-        // RRSIG as evidence that the RRset is bogus if other RRSIGs exist.
-        for (const rrsig of rrsigs) {
-            if (this.verify_rrsig(name, type, rrsig, mode)) {
-                return true;
-            }
-        }
+        const { verified, error } = rrset_verified(this.check_rrset(name, type, mode, signer));
+        if (verified) return true;
+        if (error !== undefined) throw error;
         return false;
     }
 
@@ -368,6 +426,11 @@ export class DNSSecZone extends Zone {
 
         return new ResourceRecord(label, ttl, 'IN', 'RRSIG', rrsig_value);
     }
+}
+
+// with_error returns value with its error property set when error is.
+function with_error<T extends object>(value: T, error: Error | undefined): T & { error?: Error } {
+    return error === undefined ? value : { ...value, error };
 }
 
 // canonical_rrset_order returns the RR bodies (each RDLENGTH || RDATA)

@@ -46,6 +46,7 @@ export { compare_canonical_names } from './zone/canonical';
 export * from './dnssec/dnssec_key_loader';
 export * from './dnssec/dnssec_rr';
 export * from './dnssec/dnssec_zone';
+export { SigStatus, rrset_verified, type SigResult } from './dnssec/sigcheck';
 export * from './dnssec/root_anchors';
 // The zone signer (dnsdata-go `dnssec/signer`, UP-013) as a namespace,
 // mirroring the Go package: signer.sign_zone, signer.Key, ...
