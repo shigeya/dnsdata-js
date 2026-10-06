@@ -163,6 +163,21 @@ Idiom mapping applied:
    and the RRSIG verification trail.
 4. `Result.insecureAt` / `Result.bogusAt` returns the failure point as
    a string.
+4a. `Result.insecureReason` / `Result.bogusReason` explain the failure
+    point in a short human-readable string; `Result.negativeReason`
+    does the same for `SecureNoData` / `SecureNXDomain` (which NSEC /
+    NSEC3 records proved it).
+4b. `Result.aliases` lists every CNAME / DNAME hop followed before the
+    terminal name, each with the zone that signed it and its own
+    verdict; the overall verdict is the worst of the hops (UP-005).
+4c. `Result.wildcard` is set when the positive answer was synthesised
+    from a wildcard, with the wildcard owner, closest encloser and next
+    closer whose non-existence was proven; the verdict stays
+    `Verdict.Secure` (UP-006).
+4d. `Result.answer` carries the validated RRset and the RRSIGs over it
+    that verified, only when the verdict is `Verdict.Secure` (after
+    alias hops the terminal RRset; for a wildcard the synthesised one),
+    so the caller acts on exactly what was validated (UP-015).
 5. `Result.evidence` carries the presentation-form DS / DNSKEY / RRSIG
    data (forwarded into mailsec-probe Signals on the Go path; same
    shape on the TS path).
