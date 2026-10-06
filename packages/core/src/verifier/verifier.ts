@@ -31,6 +31,7 @@ import { Registry } from '../zone/registry';
 import { Resolver } from './resolver';
 import { Result } from './result';
 import { Cache } from './cache';
+import type { StepEvent } from './events';
 import { VerifierConfigError, VerifierChainTimeoutError } from './errors';
 // chain.ts depends on this file for the Verifier class type and the
 // shared helpers below; this import is value-only because we call
@@ -73,6 +74,15 @@ export interface VerifierOptions {
     // with it the handlers ResourceRecord.get_handler() returns. A
     // nullish value is treated as not set.
     registry?: Registry;
+
+    // Optional. Receives the steps of every validate() call (StepEvent,
+    // DESIGN.md §4 SHOULD 14), e.g. for verbose logging. It is called
+    // synchronously from inside validate(), never after the returned
+    // promise settles, so a slow handler slows validation; an exception
+    // it throws rejects that validate(). Absent (the default), it costs
+    // nothing. The library itself never writes to stdout or stderr;
+    // routing events there is the caller's choice.
+    onStep?: (e: StepEvent) => void;
 }
 
 export class Verifier {
@@ -84,6 +94,7 @@ export class Verifier {
     readonly cache?: Cache;
     // Registry set on every DNSSecZone the chain walker builds.
     readonly registry: Registry;
+    readonly onStep?: (e: StepEvent) => void;
 
     // The Verifier resolves record handlers through a Registry it owns:
     // by default a fresh one holding the DNSSEC handlers
@@ -107,6 +118,7 @@ export class Verifier {
         this.now = opts.now ?? (() => new Date());
         if (opts.cache != null) this.cache = opts.cache;
         this.registry = opts.registry ?? dnssec_registry();
+        if (opts.onStep != null) this.onStep = opts.onStep;
     }
 
     // Walks the DNSSEC chain of trust from the root zone down to

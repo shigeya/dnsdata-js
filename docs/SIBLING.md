@@ -88,7 +88,7 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `dnssec/signer/nsec3.go`                  | `dnssec/signer/nsec3.ts`             | `build_nsec3`, `NSEC3Options` (UP-018) |
 | `dnssec/signer/sign.go`                   | `dnssec/signer/sign.ts`              | `sign_zone`, `SignOptions`, `rrsig_labels` (in `names.ts`) (UP-013) |
 | (sentinel errors in `dnssec/signer/key.go`) | `dnssec/signer/errors.ts`          | `SignerError`, `SignerKeyFormatError`, `SignerUnsupportedAlgorithmError` |
-| `verifier/`                               | `verifier/`                          | Chain-of-trust walker with pluggable `Resolver` (UP-001, UP-005, UP-006), `Cache` (UP-008), `Result.answer` (UP-015); `reason.ts` (`ReasonCode`, `result_error`), `sigcheck.ts` (`ZoneStep.signatures`) mirror the same-named Go files |
+| `verifier/`                               | `verifier/`                          | Chain-of-trust walker with pluggable `Resolver` (UP-001, UP-005, UP-006), `Cache` (UP-008), `Result.answer` (UP-015); `reason.ts` (`ReasonCode`, `result_error`), `sigcheck.ts` (`ZoneStep.signatures`), `events.ts` (`StepEvent`, `StepKind`, `VerifierOptions.onStep`) mirror the same-named Go files |
 | `dnssec/anchors.go`                       | `dnssec/dnssec_key_loader.ts`, `dnssec/root_anchors.ts` | Root trust anchors |
 | `resolver/resolver.go`                    | `resolver/response.ts`               | `Response { records, ad, rcode }` (UP-009) |
 | `resolver/doh/`                           | `resolver/doh/`                      | RFC 8484 DoH client with provider failover (UP-007) |

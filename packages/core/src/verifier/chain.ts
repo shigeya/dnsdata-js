@@ -14,6 +14,7 @@ import { Verdict, MAX_ALIAS_HOPS, combine_verdicts } from './verdict';
 import { DSSummary, HopOutcome, KeySummary, Result, SigCheck, ZoneStep } from './result';
 import { SigStatus } from '../dnssec/sigcheck';
 import { add_step, add_zone_sigs } from './sigcheck';
+import { StepKind, emit_alias, emit_lookup, emit_verdict } from './events';
 import {
     VerifierChainTimeoutError,
     VerifierInvalidQNameError,
@@ -75,6 +76,7 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
         check_aborted(signal);
         if (seen.has(currentQname)) {
             set_bogus(result, currentQname, 'alias loop detected', ReasonCode.AliasLoop);
+            emit_verdict(v, result, currentQname);
             return result;
         }
         seen.add(currentQname);
@@ -92,16 +94,19 @@ export async function validate(v: Verifier, qname: string, qtype: number, signal
             outcome.alias.verdict = outcome.verdict;
             if (!result.aliases) result.aliases = [];
             result.aliases.push(outcome.alias);
+            emit_alias(v, outcome.alias);
             currentQname = outcome.alias.target;
             continue;
         }
 
         apply_outcome(result, outcome, combined);
+        emit_verdict(v, result, currentQname);
         return result;
     }
 
     // Alias chain longer than MAX_ALIAS_HOPS without resolving.
     set_bogus(result, currentQname, `alias chain exceeded ${MAX_ALIAS_HOPS} hops`, ReasonCode.AliasLimit);
+    emit_verdict(v, result, currentQname);
     return result;
 }
 
@@ -160,7 +165,7 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
         check_aborted(signal);
         const d = await descend_into(v, currentZone, currentName, childName, result, signal);
         if (d.status === 'descended' || d.status === 'bogus') {
-            add_step(result, summarize_zone(childName, d.zone ?? null, currentZone,
+            add_step(v, result, summarize_zone(childName, d.zone ?? null, currentZone,
                 d.status === 'descended' ? d.ksk : null, d.sigs));
         }
         switch (d.status) {
@@ -201,17 +206,17 @@ async function validate_root(v: Verifier, result: Result, signal?: AbortSignal):
     // as verified only through an RRSIG made by one of them.
     const rootKSKs = match_ksks_with_anchors(v, rootZone);
     if (rootKSKs.length === 0) {
-        add_step(result, summarize_zone('.', rootZone, null, null, []));
+        add_step(v, result, summarize_zone('.', rootZone, null, null, []));
         return bogus_outcome('.', 'root KSK does not match any configured trust anchor',
             ReasonCode.TrustAnchorMismatch);
     }
     trust_keys(rootZone, rootKSKs);
-    const check = check_rrset(rootZone, '.', TYPE_DNSKEY, KeyVerifyMode.KSK, result);
+    const check = check_rrset(v, rootZone, '.', TYPE_DNSKEY, KeyVerifyMode.KSK, result);
     if (!check.ok) {
-        add_step(result, summarize_zone('.', rootZone, null, null, check.sigs));
+        add_step(v, result, summarize_zone('.', rootZone, null, null, check.sigs));
         return bogus_outcome('.', 'root DNSKEY rrset signature did not verify', check.code);
     }
-    add_step(result, summarize_zone('.', rootZone, null, signing_ksk(rootKSKs, check.sigs), check.sigs));
+    add_step(v, result, summarize_zone('.', rootZone, null, signing_ksk(rootKSKs, check.sigs), check.sigs));
     return rootZone;
 }
 
@@ -251,7 +256,7 @@ async function descend_into(v: Verifier, parentZone: DNSSecZone, parentName: str
     const dsCount = await load_records(v, parentZone, childName, TYPE_DS, result, signal);
     if (dsCount === 0) return no_ds_descent(parentZone, childName);
 
-    const dsCheck = check_rrset(parentZone, childName, TYPE_DS, KeyVerifyMode.None, result);
+    const dsCheck = check_rrset(v, parentZone, childName, TYPE_DS, KeyVerifyMode.None, result);
     if (!dsCheck.ok) {
         return {
             status: 'bogus', reason: `DS rrset for ${childName} did not verify under ${parentName}`,
@@ -270,7 +275,7 @@ async function descend_into(v: Verifier, parentZone: DNSSecZone, parentName: str
     if (!Array.isArray(match)) return { status: 'bogus', ...match, zone, sigs: dsCheck.sigs };
     trust_keys(zone, match);
 
-    const dnskeyCheck = check_rrset(zone, childName, TYPE_DNSKEY, KeyVerifyMode.KSK, result);
+    const dnskeyCheck = check_rrset(v, zone, childName, TYPE_DNSKEY, KeyVerifyMode.KSK, result);
     const sigs = [...dsCheck.sigs, ...dnskeyCheck.sigs];
     if (!dnskeyCheck.ok) {
         return {
@@ -308,8 +313,8 @@ function trust_keys(z: DNSSecZone, keys: DNSKey[]): void {
 async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: string, qname: string, qtype: number, result: Result, signal?: AbortSignal): Promise<HopOutcome> {
     const added = await load_records(v, currentZone, qname, qtype, result, signal);
     if (added > 0) {
-        const check = check_rrset(currentZone, qname, qtype, KeyVerifyMode.None, result);
-        add_zone_sigs(result, currentName, check.sigs);
+        const check = check_rrset(v, currentZone, qname, qtype, KeyVerifyMode.None, result);
+        add_zone_sigs(v, result, currentName, check.sigs);
         if (!check.ok) {
             return bogus_outcome(currentName,
                 `RRSIG over ${qname}/${qtype_mnemonic(qtype)} did not verify under ${currentName}`, check.code);
@@ -350,9 +355,9 @@ async function resolve_leaf(v: Verifier, currentZone: DNSSecZone, currentName: s
     // (RFC 6672 §5.3.1), so trying CNAME first would report the signed
     // DNAME as Bogus. The target is derived from the DNAME; the
     // synthesised CNAME is not used.
-    const dname = try_dname(currentZone, currentName, qname, result);
+    const dname = try_dname(v, currentZone, currentName, qname, result);
     if (dname) return dname;
-    const cname = try_cname(currentZone, currentName, qname, result);
+    const cname = try_cname(v, currentZone, currentName, qname, result);
     if (cname) return cname;
 
     // No alias — fall back to negative-existence proofs.
@@ -390,10 +395,12 @@ async function load_records(
     if (v.cache) {
         const cached = v.cache.get(name, qtype);
         if (cached !== undefined) {
+            emit_lookup(v, StepKind.CacheHit, name, qtype);
             return apply_records(cached, z, name, qtype, result);
         }
     }
 
+    emit_lookup(v, StepKind.Query, name, qtype);
     let resp;
     try {
         resp = await v.resolver.query(name, qtype, signal);

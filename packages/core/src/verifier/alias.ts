@@ -8,7 +8,7 @@ import { Verdict } from './verdict';
 import { HopOutcome, Result } from './result';
 import { ReasonCode, bogus_outcome, check_rrset } from './reason';
 import { add_zone_sigs } from './sigcheck';
-import { normalize_qname } from './verifier';
+import { type Verifier, normalize_qname } from './verifier';
 import { ancestors_of, canon_labels_trim } from './leaf_negative';
 
 const TYPE_CNAME = StringToRRType('CNAME');
@@ -21,7 +21,7 @@ const TYPE_DNAME = StringToRRType('DNAME');
 // Returns null when no CNAME is present — the caller then tries
 // DNAME or negative-proof handling. A CNAME present but failing
 // signature verification returns a hop whose verdict is Bogus.
-export function try_cname(currentZone: DNSSecZone, currentName: string, qname: string,
+export function try_cname(v: Verifier, currentZone: DNSSecZone, currentName: string, qname: string,
                           result: Result): HopOutcome | null {
     const rrset = currentZone.find_rrset(qname, TYPE_CNAME);
     if (rrset.length === 0) return null;
@@ -30,8 +30,8 @@ export function try_cname(currentZone: DNSSecZone, currentName: string, qname: s
     if (target === '' || target === '.') {
         return bogus_outcome(qname, 'CNAME target is empty', ReasonCode.AliasTargetInvalid);
     }
-    const check = check_rrset(currentZone, qname, TYPE_CNAME, KeyVerifyMode.None, result);
-    add_zone_sigs(result, currentName, check.sigs);
+    const check = check_rrset(v, currentZone, qname, TYPE_CNAME, KeyVerifyMode.None, result);
+    add_zone_sigs(v, result, currentName, check.sigs);
     if (!check.ok) {
         return bogus_outcome(currentName, `RRSIG over ${qname}/CNAME did not verify`, check.code);
     }
@@ -53,7 +53,7 @@ export function try_cname(currentZone: DNSSecZone, currentName: string, qname: s
 // qname's ancestors longest-first; the first one carrying a DNAME
 // wins. The synthesised qname is strict suffix replacement of
 // OWNER with TARGET.
-export function try_dname(currentZone: DNSSecZone, currentName: string, qname: string,
+export function try_dname(v: Verifier, currentZone: DNSSecZone, currentName: string, qname: string,
                           result: Result): HopOutcome | null {
     for (const anc of ancestors_of(qname)) {
         if (equal_canonical_names(anc, qname)) {
@@ -67,8 +67,8 @@ export function try_dname(currentZone: DNSSecZone, currentName: string, qname: s
         if (target === '' || target === '.') {
             return bogus_outcome(anc, 'DNAME target is empty', ReasonCode.AliasTargetInvalid);
         }
-        const check = check_rrset(currentZone, anc, TYPE_DNAME, KeyVerifyMode.None, result);
-        add_zone_sigs(result, currentName, check.sigs);
+        const check = check_rrset(v, currentZone, anc, TYPE_DNAME, KeyVerifyMode.None, result);
+        add_zone_sigs(v, result, currentName, check.sigs);
         if (!check.ok) {
             return bogus_outcome(currentName, `RRSIG over ${anc}/DNAME did not verify`, check.code);
         }

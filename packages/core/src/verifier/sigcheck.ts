@@ -5,6 +5,8 @@
 
 import { SigResult } from '../dnssec/sigcheck';
 import { Result, SigCheck, ZoneStep } from './result';
+import { StepKind, emit, emit_sig } from './events';
+import type { Verifier } from './verifier';
 
 const MILLISECONDS_PER_SECOND = 1000;
 
@@ -30,31 +32,34 @@ export function sig_checks(name: string, results: readonly SigResult[]): SigChec
 
 // add_step puts step into result.chain. A step for the same zone added
 // by an earlier hop is kept, and only the signature checks it lacks are
-// appended to it, so re-walking a zone adds nothing twice.
-export function add_step(result: Result, step: ZoneStep): void {
+// appended to it, so re-walking a zone adds nothing twice. A new step is
+// reported as a StepKind.Zone event, each check added as a Sig event.
+export function add_step(v: Verifier, result: Result, step: ZoneStep): void {
     const existing = result.chain.find((s) => s.zone === step.zone);
     if (existing !== undefined) {
-        add_sigs(existing, step.signatures ?? []);
+        add_sigs(v, existing, step.signatures ?? []);
         return;
     }
     const { signatures, ...rest } = step;
     const added: ZoneStep = { ...rest };
     result.chain.push(added);
-    add_sigs(added, signatures ?? []);
+    emit(v, StepKind.Zone, added.zone, '');
+    add_sigs(v, added, signatures ?? []);
 }
 
 // add_zone_sigs appends checks to the chain step of zoneName, which the
 // walk has already added.
-export function add_zone_sigs(result: Result, zoneName: string, checks: readonly SigCheck[]): void {
-    add_step(result, { zone: zoneName, signatures: [...checks] });
+export function add_zone_sigs(v: Verifier, result: Result, zoneName: string, checks: readonly SigCheck[]): void {
+    add_step(v, result, { zone: zoneName, signatures: [...checks] });
 }
 
 // add_sigs appends to step each check it does not hold yet.
-function add_sigs(step: ZoneStep, checks: readonly SigCheck[]): void {
+function add_sigs(v: Verifier, step: ZoneStep, checks: readonly SigCheck[]): void {
     for (const c of checks) {
         if (step.signatures?.some((s) => same_check(s, c))) continue;
         if (step.signatures === undefined) step.signatures = [];
         step.signatures.push(c);
+        emit_sig(v, step.zone, c);
     }
 }
 

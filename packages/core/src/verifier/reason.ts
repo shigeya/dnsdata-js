@@ -13,7 +13,12 @@ import {
     VerifierSigExpiredError, VerifierSigInvalidError, VerifierTrustAnchorMismatchError,
     VerifierUnsupportedAlgoError,
 } from './errors';
-import { qtype_mnemonic } from './verifier';
+import { type Verifier, qtype_mnemonic } from './verifier';
+import { StepKind, emit_rrset_check } from './events';
+import { StringToRRType } from '../types/dns_type_table';
+
+const TYPE_DS     = StringToRRType('DS');
+const TYPE_DNSKEY = StringToRRType('DNSKEY');
 
 // ReasonCode: the machine-readable cause in Result.reasonCode. Each maps
 // to the Error subclass result_error returns (VerifierBogusError alone
@@ -144,12 +149,13 @@ export interface RRSetCheck {
 // it throws: VerifierUnsupportedAlgoError carrying result, with
 // result.reasonCode set, when every RRSIG used an unsupported
 // algorithm, otherwise a VerifierError naming the cause.
-export function check_rrset(z: DNSSecZone, name: string, rrtype: number, mode: KeyVerifyMode,
+export function check_rrset(v: Verifier, z: DNSSecZone, name: string, rrtype: number, mode: KeyVerifyMode,
                             result: Result): RRSetCheck {
     const results = z.check_rrset(name, rrtype, mode);
     const { verified, error } = rrset_verified(results);
     const sigs = sig_checks(name, results);
     const check: RRSetCheck = verified ? { ok: true, sigs } : { ok: false, code: sig_failure_code(results), sigs };
+    emit_rrset_check(v, name, step_kind_of(rrtype), check, error !== undefined);
     if (error === undefined) return check;
     const message = `verifier: ${name}/${qtype_mnemonic(rrtype)}: ${error.message}`;
     if (check.code === ReasonCode.UnsupportedAlgorithm) {
@@ -157,6 +163,14 @@ export function check_rrset(z: DNSSecZone, name: string, rrtype: number, mode: K
         throw new VerifierUnsupportedAlgoError(message, result);
     }
     throw new VerifierError(message);
+}
+
+// step_kind_of names the event a check of rrtype is reported as: DS and
+// DNSKEY checks only.
+function step_kind_of(rrtype: number): StepKind.DS | StepKind.DNSKEY | null {
+    if (rrtype === TYPE_DS) return StepKind.DS;
+    if (rrtype === TYPE_DNSKEY) return StepKind.DNSKEY;
+    return null;
 }
 
 // bogus_outcome is the terminal hop outcome of a Bogus verdict.

@@ -159,6 +159,16 @@ version?" question answerable at a glance.
   the times as RFC 3339 UTC strings and `result` a `SigStatus` value.
   A step an earlier alias hop added only gains the checks it lacks.
   Ports dnsdata-go `6cef240`.
+- `VerifierOptions.onStep?: (e: StepEvent) => void`: streams the steps
+  of every `validate()` call (DESIGN.md §4 SHOULD 14). `StepEvent` is
+  `{ kind, zone, sig?, detail }`; `kind` is a `StepKind`: `query`,
+  `cache-hit`, `ds`, `dnskey`, `zone`, `sig`, `alias`, `insecure`,
+  `bogus`, `answer`. Sig events are emitted as SigChecks enter
+  `Result.chain` (one to one, `sig` a copy), zone events root first,
+  `answer` last. The handler runs synchronously inside `validate()` and
+  never after its promise settles; absent, it costs nothing. The
+  library still never writes to stdout or stderr. Ports dnsdata-go
+  `19c5fee`.
 - `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
   a zone treats as authenticated from outside it, by owner and RDATA.
 - `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every

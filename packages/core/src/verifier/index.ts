@@ -21,6 +21,7 @@ export {
     descendant_zones,
 } from './chain';
 export { ReasonCode, result_error } from './reason';
+export { StepKind, type StepEvent } from './events';
 export {
     try_cname,
     try_dname,

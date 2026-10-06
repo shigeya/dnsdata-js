@@ -63,6 +63,7 @@ export * from './verifier/resolver';
 export * from './verifier/cache';
 export * from './verifier/errors';
 export { ReasonCode, result_error } from './verifier/reason';
+export { StepKind, type StepEvent } from './verifier/events';
 export { Verifier, VerifierOptions } from './verifier/verifier';
 // The in-memory authority (dnsdata-go `resolver/memory`, UP-014) as a
 // namespace, mirroring the Go package: memory.new_authority,
