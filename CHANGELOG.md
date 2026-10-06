@@ -14,6 +14,16 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-06
+
+Verifier results say why a validation failed and which signatures were
+checked, and verification can be streamed: `Result.reasonCode` and
+`result_error()` (MUST 12), `ZoneStep.signatures` (MUST 3),
+`VerifierOptions.onStep` (SHOULD 14). Each `Verifier` owns its RR handler
+`Registry` (MUST NOT 22) and no longer needs `registerAllHandlers()`.
+Includes the 0.9.1 security fixes. Ports dnsdata-go v0.10.0; coordinated
+release with it.
+
 ### Changed
 
 - `Verifier` resolves record handlers through a registry it owns: by
