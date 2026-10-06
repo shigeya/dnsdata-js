@@ -14,6 +14,29 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.10.1] — 2026-10-06
+
+Completes the 0.10.0 migration note for code that relied on the zone
+handlers (TLSA, SMIMEA, SVCB, HTTPS, ...) registered globally, and adds
+a one-line way to give a `Verifier` its own copy of them. The default
+`Verifier` is unchanged. Ports dnsdata-go v0.10.1; coordinated release
+with it.
+
+### Added
+
+- `VerifierOptions.zoneHandlers`: when `true`, the Verifier's own
+  registry holds the bundled zone handlers
+  (`register_legacy_handlers_into`) next to the DNSSEC ones. Use it when
+  the resolver returns records in presentation form without their RDATA
+  octets (e.g. an in-memory authority built from zone text); the default
+  registry stays untouched. Combining it with `registry` throws
+  `VerifierConfigError`. Ports dnsdata-go `verifier.WithZoneHandlers`.
+
+### Changed
+
+- The `no encoder for <name> <type>` error of a zone with its own
+  registry (every Verifier's) also names `VerifierOptions.zoneHandlers`.
+
 ## [0.10.0] — 2026-10-06
 
 Verifier results say why a validation failed and which signatures were
@@ -21,6 +44,10 @@ checked, and verification can be streamed: `Result.reasonCode` and
 `result_error()` (MUST 12), `ZoneStep.signatures` (MUST 3),
 `VerifierOptions.onStep` (SHOULD 14). Each `Verifier` owns its RR handler
 `Registry` (MUST NOT 22) and no longer needs `registerAllHandlers()`.
+**Breaking:** a `Verifier` no longer sees the zone handlers registered
+with `registerAllHandlers()` / `register_legacy_handlers()`; a resolver
+that returns TLSA, SVCB, ... in presentation form without their RDATA
+octets now fails with `no encoder for <name> <type>` (see Changed).
 Includes the 0.9.1 security fixes. Ports dnsdata-go v0.10.0; coordinated
 release with it.
 
@@ -30,12 +57,26 @@ release with it.
   default a fresh one holding the DNSSEC handlers only, or
   `VerifierOptions.registry`. It no longer needs `registerAllHandlers()`
   (or `register_dnssec_handlers()`) and never touches the default
-  registry (DESIGN.md §4 MUST NOT 22). Verdicts are unchanged. A
-  `Verifier` no longer sees handlers registered globally, so records
-  whose presentation form needs a zone handler (TLSA, SVCB, ... without
-  their received RDATA) need `VerifierOptions.registry` with
-  `register_legacy_handlers_into`; passing `default_registry()` restores
-  the old sharing. Ports dnsdata-go `d359fce`.
+  registry (DESIGN.md §4 MUST NOT 22). Verdicts are unchanged. Ports
+  dnsdata-go `d359fce`.
+- **Breaking:** a `Verifier` no longer sees handlers registered
+  globally. Answers the bundled resolver clients receive carry their
+  RDATA octets and validate as before; records whose presentation form
+  needs a zone handler (TLSA, SMIMEA, SVCB, HTTPS, ... without their
+  received RDATA, e.g. from an in-memory authority built from zone text)
+  fail with `no encoder for <name> SVCB (...)`. Give the Verifier a
+  registry with both handler sets:
+
+  ```ts
+  const registry = new Registry();
+  register_dnssec_handlers_into(registry);
+  register_legacy_handlers_into(registry);
+  const v = new Verifier({ resolver, registry });
+  ```
+
+  or, from 0.10.1, `new Verifier({ resolver, zoneHandlers: true })`.
+  Passing `default_registry()` restores the old sharing (this note was
+  completed in 0.10.1).
 - The handler cached on a `ResourceRecord` is tied to the registry that
   built it and is never returned for another registry, so Verifiers
   with different registries can share one cache.
