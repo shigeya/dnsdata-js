@@ -14,53 +14,7 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
-### Security
-
-- The verifier no longer accepts a DNSKEY rrset on the strength of a
-  key that is not authenticated. Through v0.9.0 (every release since
-  the chain validator appeared in v0.4.0), `KeyVerifyMode.KSK` on a
-  DNSKEY rrset returned true for an SEP-flagged key without checking
-  the signature octets; `verify_delegation_signer` trusted any key
-  whose owner was marked with `add_sep`, which the verifier did for
-  every zone it entered; a key without the SEP flag was checked only
-  against its own signature; and only the first DNSKEY with the RRSIG's
-  key tag was tried. Adding a key to a zone's DNSKEY rrset, the root's
-  included, could therefore make data signed by that key validate as
-  Secure. Now an RRSIG over a DNSKEY rrset in KSK mode verifies only
-  when its signature octets verify with the DNSKEY it names and that
-  exact DNSKEY (owner and full RDATA) matched a configured trust
-  anchor or a DS record of the validated parent DS rrset.
-- **A DNSKEY carried in the answer to any other query became a signing
-  key of the zone.** The verifier added every record of a response to
-  the zone, so a DNSKEY in the leaf answer or in a DS answer asked of
-  the zone joined it after its DNSKEY rrset had been authenticated, and
-  data signed by it (checked in `KeyVerifyMode.None`) validated Secure.
-  The same held for a DNSKEY at an unrelated owner whose name the
-  RRSIG gave as its signer. Affects every release (v0.1.0 through
-  v0.9.0). The verifier now takes a DNSKEY only from the answer to the
-  DNSKEY query for its owner name, and drops any other, from the zone
-  and from `Result.evidence.dnskeys`. Ports dnsdata-go `8b0f6b3`.
-- `DNSSecZone.verify_rrsig` with a `KeyVerifyMode` value other than
-  `None`, `KSK`, `ZSK` or `CSK` accepted any key; it now accepts none
-  (fails closed), as dnsdata-go does.
-
 ### Changed
-
-- `DNSSecZone.verify_rrsig` tries every DNSKEY at the signer with the
-  RRSIG's key tag and algorithm, and in every mode verifies the
-  signature before accepting a key. `KSK` accepts only a key passing
-  `verify_ksk`; `ZSK` only a key in a DNSKEY rrset that verifies in KSK
-  mode; `CSK` either. The SEP flag plays no part (RFC 4034 §2.1.1).
-- `DNSSecZone.verify_delegation_signer` accepts a key added with
-  `add_trusted_key` or one whose DS digest matches a DS record in the
-  parent zone. It no longer consults `add_sep` marks or DS records in
-  the zone itself (which nothing has validated); without a parent only
-  trusted keys pass. `add_sep` / `is_secure_entry_point` remain, as
-  informational marks.
-- The verifier trusts every root DNSKEY that matches a trust anchor
-  and every child DNSKEY that matches the parent's DS rrset, whether or
-  not it carries the SEP flag. A zone whose KSK lacks the SEP flag now
-  validates as Secure instead of Bogus.
 
 - `Verifier` resolves record handlers through a registry it owns: by
   default a fresh one holding the DNSSEC handlers only, or
@@ -169,10 +123,6 @@ version?" question answerable at a glance.
   never after its promise settles; absent, it costs nothing. The
   library still never writes to stdout or stderr. Ports dnsdata-go
   `19c5fee`.
-- `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
-  a zone treats as authenticated from outside it, by owner and RDATA.
-- `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every
-  matching DNSKEY. `find_dnskey` still returns the first one.
 
 ### Fixed
 
@@ -180,6 +130,50 @@ version?" question answerable at a glance.
   zone, while the DS records live in the parent's response. It now
   lists the DS records that authorised the descent into the zone (none
   for the root). Ports dnsdata-go `0f9f5cb`.
+
+## [0.9.1] — 2026-10-06
+
+Security patch on v0.9.0: the chain verifier authenticated DNSKEYs
+too loosely. Affects every tagged release, v0.4.0 through v0.9.0.
+Contains only these fixes; no other change since v0.9.0.
+
+### Security
+
+- **DNSKEY rrset signatures in KSK mode were not checked.** An
+  SEP-flagged key was accepted over a DNSKEY rrset without verifying
+  the signature octets, so a key added to a zone's DNSKEY rrset (the
+  root's included) could make forged data validate Secure; it is now
+  Bogus.
+- **Unauthenticated keys were accepted.** Any key in a zone the
+  verifier entered was trusted, and a key without the SEP flag was
+  checked only against its own signature. A KSK is now trusted only
+  when that exact DNSKEY (owner and RDATA) matches a configured trust
+  anchor or a DS record of the validated parent DS rrset, and the SEP
+  flag plays no part: a zone whose DS-matched KSK lacks the SEP flag
+  now validates Secure instead of Bogus.
+- **DNSKEYs were taken from other answers.** A DNSKEY carried in the
+  leaf answer or a DS answer, or one at an unrelated owner named as
+  the leaf RRSIG's signer, joined the zone and could sign data that
+  validated Secure. A DNSKEY is now taken only from the answer to the
+  DNSKEY query for its own owner; others are dropped from the zone and
+  from `Result.evidence.dnskeys`, and such data is now Bogus.
+- `DNSSecZone.verify_rrsig` with an unknown `KeyVerifyMode` value
+  accepted any key; it now fails closed.
+
+### Changed
+
+- `DNSSecZone.verify_rrsig` tries every DNSKEY at the signer with the
+  RRSIG's key tag and algorithm, and verifies the signature in every
+  mode. `ZSK` accepts a key whose DNSKEY rrset verifies in KSK mode;
+  `CSK` either.
+- `DNSSecZone.verify_delegation_signer` accepts only a key added with
+  `add_trusted_key` or one matching a DS record in the parent zone;
+  `add_sep` / `is_secure_entry_point` remain as informational marks.
+
+### Added
+
+- `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)` and
+  `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`.
 
 ## [0.9.0] — 2026-10-05
 
