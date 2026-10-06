@@ -135,15 +135,18 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
     const rootZone = new_zone(v);
     await load_records(v, rootZone, '.', TYPE_DNSKEY, result, signal);
 
-    const rootKSK = match_ksk_with_anchors(v, rootZone);
-    if (!rootKSK) {
+    // Only the anchor-matched keys are trusted; the DNSKEY rrset counts
+    // as verified only through an RRSIG made by one of them.
+    const rootKSKs = match_ksks_with_anchors(v, rootZone);
+    if (rootKSKs.length === 0) {
         return {
             verdict: Verdict.Bogus,
             bogusAt: '.',
             bogusReason: 'root KSK does not match any configured trust anchor',
         };
     }
-    rootZone.add_sep('.');
+    const rootKSK = rootKSKs[0];
+    for (const key of rootKSKs) rootZone.add_trusted_key(key);
     if (!rootZone.verify_rrset('.', TYPE_DNSKEY, KeyVerifyMode.KSK)) {
         return {
             verdict: Verdict.Bogus,
@@ -200,15 +203,17 @@ async function validate_one_hop(v: Verifier, qname: string, qtype: number, resul
         childZone.parent = currentZone;
         await load_records(v, childZone, childName, TYPE_DNSKEY, result, signal);
 
-        const childKSK = match_ksk_with_ds(childZone, currentZone, childName);
-        if (!childKSK) {
+        // Only the keys matching the validated DS rrset are trusted.
+        const childKSKs = match_ksks_with_ds(childZone, currentZone, childName);
+        if (childKSKs.length === 0) {
             return {
                 verdict: Verdict.Bogus,
                 bogusAt: childName,
                 bogusReason: `no DNSKEY at ${childName} matched a DS record in ${currentName}`,
             };
         }
-        childZone.add_sep(childName);
+        const childKSK = childKSKs[0];
+        for (const key of childKSKs) childZone.add_trusted_key(key);
         if (!childZone.verify_rrset(childName, TYPE_DNSKEY, KeyVerifyMode.KSK)) {
             return {
                 verdict: Verdict.Bogus,
@@ -382,26 +387,15 @@ function apply_records(records: ResourceRecord[], z: DNSSecZone, name: string, q
     return matching;
 }
 
-// Returns the first SEP-flagged DNSKEY in the root zone whose
-// DS digest matches one of the configured trust anchors.
-function match_ksk_with_anchors(v: Verifier, rootZone: DNSSecZone): DNSKey | null {
-    if (!v.anchors.ds || v.anchors.ds.length === 0) {
-        return null;
-    }
-    const dnskeys = rootZone.find_rrset('.', TYPE_DNSKEY);
-    for (const rr of dnskeys) {
-        const handler = rr.get_handler();
-        if (!(handler instanceof DNSKey) || !handler.is_secure_entry_point()) continue;
-        for (const anchor of v.anchors.ds) {
-            if (anchor.keyTag !== handler.key_tag || anchor.algorithm !== handler.algorithm) {
-                continue;
-            }
-            if (verify_anchor_digest(handler, anchor)) {
-                return handler;
-            }
-        }
-    }
-    return null;
+// Returns every DNSKEY in the root zone whose DS digest matches one of
+// the configured trust anchors. The SEP flag is not required
+// (RFC 4034 §2.1.1).
+function match_ksks_with_anchors(v: Verifier, rootZone: DNSSecZone): DNSKey[] {
+    const anchors = v.anchors.ds ?? [];
+    return rootZone.find_dnskeys('.').filter((key) =>
+        anchors.some((anchor) =>
+            anchor.keyTag === key.key_tag && anchor.algorithm === key.algorithm &&
+            verify_anchor_digest(key, anchor)));
 }
 
 // Returns the proper-suffix zone names of qname from shallowest to
@@ -471,26 +465,17 @@ function summarize_zone(zoneName: string, z: DNSSecZone, ksk: DNSKey): ZoneStep 
     return step;
 }
 
-// Returns the first SEP-flagged DNSKEY in childZone whose DS digest
-// matches one of the DS records present at parentZone under childName.
-function match_ksk_with_ds(childZone: DNSSecZone, parentZone: DNSSecZone, childName: string): DNSKey | null {
-    const dnskeys = childZone.find_rrset(childName, TYPE_DNSKEY);
-    const dsRRs = parentZone.find_rrset(childName, TYPE_DS);
-    if (dnskeys.length === 0 || dsRRs.length === 0) return null;
-
-    for (const rr of dnskeys) {
-        const key = rr.get_handler();
-        if (!(key instanceof DNSKey) || !key.is_secure_entry_point()) continue;
-        for (const dsRR of dsRRs) {
-            const ds = dsRR.get_handler();
-            if (!(ds instanceof DNSRR_DS)) continue;
-            if (ds.key_tag !== key.key_tag || ds.algorithm !== key.algorithm) continue;
-            if (ds.verify_digest(key.get_ds_digest_data())) {
-                return key;
-            }
-        }
-    }
-    return null;
+// Returns every DNSKEY in childZone whose DS digest matches one of the
+// DS records at parentZone under childName (the caller has validated
+// that DS rrset). The SEP flag is not required (RFC 4034 §2.1.1).
+function match_ksks_with_ds(childZone: DNSSecZone, parentZone: DNSSecZone, childName: string): DNSKey[] {
+    const dses = parentZone.find_rrset(childName, TYPE_DS)
+        .map((rr) => rr.get_handler())
+        .filter((h): h is DNSRR_DS => h instanceof DNSRR_DS);
+    return childZone.find_dnskeys(childName).filter((key) =>
+        dses.some((ds) =>
+            ds.key_tag === key.key_tag && ds.algorithm === key.algorithm &&
+            ds.verify_digest(key.get_ds_digest_data())));
 }
 
 // Computes the DS digest from a candidate DNSKEY and compares it

@@ -14,6 +14,48 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Security
+
+- The verifier no longer accepts a DNSKEY rrset on the strength of a
+  key that is not authenticated. Through v0.9.0 (every release since
+  the chain validator appeared in v0.4.0), `KeyVerifyMode.KSK` on a
+  DNSKEY rrset returned true for an SEP-flagged key without checking
+  the signature octets; `verify_delegation_signer` trusted any key
+  whose owner was marked with `add_sep`, which the verifier did for
+  every zone it entered; a key without the SEP flag was checked only
+  against its own signature; and only the first DNSKEY with the RRSIG's
+  key tag was tried. Adding a key to a zone's DNSKEY rrset, the root's
+  included, could therefore make data signed by that key validate as
+  Secure. Now an RRSIG over a DNSKEY rrset in KSK mode verifies only
+  when its signature octets verify with the DNSKEY it names and that
+  exact DNSKEY (owner and full RDATA) matched a configured trust
+  anchor or a DS record of the validated parent DS rrset.
+
+### Changed
+
+- `DNSSecZone.verify_rrsig` tries every DNSKEY at the signer with the
+  RRSIG's key tag and algorithm, and in every mode verifies the
+  signature before accepting a key. `KSK` accepts only a key passing
+  `verify_ksk`; `ZSK` only a key in a DNSKEY rrset that verifies in KSK
+  mode; `CSK` either. The SEP flag plays no part (RFC 4034 §2.1.1).
+- `DNSSecZone.verify_delegation_signer` accepts a key added with
+  `add_trusted_key` or one whose DS digest matches a DS record in the
+  parent zone. It no longer consults `add_sep` marks or DS records in
+  the zone itself (which nothing has validated); without a parent only
+  trusted keys pass. `add_sep` / `is_secure_entry_point` remain, as
+  informational marks.
+- The verifier trusts every root DNSKEY that matches a trust anchor
+  and every child DNSKEY that matches the parent's DS rrset, whether or
+  not it carries the SEP flag. A zone whose KSK lacks the SEP flag now
+  validates as Secure instead of Bogus.
+
+### Added
+
+- `DNSSecZone.add_trusted_key(key)` / `is_trusted_key(key)`: the keys
+  a zone treats as authenticated from outside it, by owner and RDATA.
+- `DNSSecZone.find_dnskeys(signer, keytag?, algorithm?)`: every
+  matching DNSKEY. `find_dnskey` still returns the first one.
+
 ## [0.9.0] — 2026-10-05
 
 Coordinated release with dnsdata-go v0.9.0 (port-back of UP-020). A

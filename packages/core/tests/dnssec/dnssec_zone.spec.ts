@@ -2,7 +2,7 @@
 
 import * as crypto from 'crypto';
 import { DNSSecZone, KeyVerifyMode } from "../../src/dnssec/dnssec_zone";
-import { DNSKey, DNSRR_DS } from "../../src/dnssec/dnssec_rr";
+import { DNSKey, DNSRR_DS, RRSig } from "../../src/dnssec/dnssec_rr";
 
 // Generate a test RSA key pair and create a signed zone for testing
 function create_test_zone(): {
@@ -131,11 +131,55 @@ describe("DNSSecZone", () => {
         expect(zone.is_secure_entry_point("other.com.")).toBe(false);
     });
 
-    it("verify_delegation_signer returns true at trust anchor", () => {
+    it("verify_delegation_signer returns true for a trusted key", () => {
+        const { zone, keyTag } = create_test_zone();
+        const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+        zone.add_trusted_key(dnskey);
+        expect(zone.is_trusted_key(dnskey)).toBe(true);
+        expect(zone.verify_delegation_signer(dnskey)).toBe(true);
+    });
+
+    it("verify_delegation_signer does not trust a key just because its owner is an SEP", () => {
         const { zone, keyTag } = create_test_zone();
         zone.add_sep("example.com.");
         const dnskey = zone.find_dnskey("example.com.", keyTag)!;
-        expect(zone.verify_delegation_signer(dnskey)).toBe(true);
+        expect(zone.verify_delegation_signer(dnskey)).toBe(false);
+    });
+
+    it("trusts only the exact key added, not another key with the same owner", () => {
+        const { zone, keyTag } = create_test_zone();
+        const trusted = zone.find_dnskey("example.com.", keyTag)!;
+        zone.add_trusted_key(trusted);
+        const other = create_test_zone().zone.find_dnskeys("example.com.")[0];
+        expect(zone.is_trusted_key(other)).toBe(false);
+    });
+
+    it("KSK mode rejects a tampered signature over DNSKEY from a trusted key", () => {
+        const { zone, keyTag } = create_test_zone();
+        const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+        zone.add_trusted_key(dnskey);
+        const sig = zone.find_rrsigs("example.com.", 48)[0];
+        const flipped = new Uint8Array(sig.signature);
+        flipped[0] ^= 0xff;
+        const bad = new RRSig(null, `DNSKEY ${sig.algorithm} ${sig.labels} ${sig.original_ttl} ` +
+            `${sig.expire} ${sig.inception} ${sig.key_tag} ${sig.signer} ${Buffer.from(flipped).toString('base64')}`);
+        expect(zone.verify_rrsig("example.com.", 48, sig, KeyVerifyMode.KSK)).toBe(true);
+        expect(zone.verify_rrsig("example.com.", 48, bad, KeyVerifyMode.KSK)).toBe(false);
+    });
+
+    it("KSK mode rejects a valid signature from a key that is not authenticated", () => {
+        const { zone } = create_test_zone();
+        zone.add_sep("example.com.");
+        expect(zone.verify_rrset("example.com.", 48, KeyVerifyMode.KSK)).toBe(false);
+    });
+
+    it("ZSK mode accepts data signed by a key of an authenticated DNSKEY rrset", () => {
+        const { zone, keyTag } = create_test_zone();
+        expect(zone.verify_rrset("example.com.", 1, KeyVerifyMode.ZSK)).toBe(false);
+        expect(zone.verify_rrset("example.com.", 1, KeyVerifyMode.CSK)).toBe(false);
+        zone.add_trusted_key(zone.find_dnskey("example.com.", keyTag)!);
+        expect(zone.verify_rrset("example.com.", 1, KeyVerifyMode.ZSK)).toBe(true);
+        expect(zone.verify_rrset("example.com.", 1, KeyVerifyMode.CSK)).toBe(true);
     });
 
     it("verify_delegation_signer_with_ds checks algorithm match and digest", () => {
@@ -267,12 +311,24 @@ describe("DNSSecZone parent zone", () => {
         expect(childZone.verify_delegation_signer(childDnskey)).toBe(true);
     });
 
-    it("verify_delegation_signer falls back to self when no parent", () => {
+    it("verify_delegation_signer without a parent accepts only a trusted key", () => {
         const { zone, keyTag } = create_test_zone();
-        // No parent set, DS not in zone either, but SEP is set
+        // No parent set and no DS: the SEP mark alone does not
+        // authenticate the key, a trusted (anchor) key does.
         zone.add_sep("example.com.");
         const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+        expect(zone.verify_delegation_signer(dnskey)).toBe(false);
+        zone.add_trusted_key(dnskey);
         expect(zone.verify_delegation_signer(dnskey)).toBe(true);
+    });
+
+    it("verify_delegation_signer ignores DS records in the zone itself", () => {
+        const { zone, keyTag } = create_test_zone();
+        const dnskey = zone.find_dnskey("example.com.", keyTag)!;
+        const hash = crypto.createHash('sha256').update(Buffer.from(dnskey.get_ds_digest_data())).digest();
+        zone.add_rr_from_parts("example.com.", 3600, "IN", "DS",
+            `${keyTag} ${dnskey.algorithm} 2 ${hash.toString('hex')}`);
+        expect(zone.verify_delegation_signer(dnskey)).toBe(false);
     });
 
     it("verify_delegation_signer fails when DS is only in parent but parent not set", () => {

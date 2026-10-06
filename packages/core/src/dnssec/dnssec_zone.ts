@@ -36,8 +36,22 @@ function registration_for(type: number): string {
         : 'registerAllHandlers() or register_legacy_handlers()';
 }
 
+// key_identity names one exact DNSKEY: its owner (case-insensitive) and
+// its whole RDATA (flags, protocol, algorithm, public key). Two keys
+// that share a key tag but differ in any RDATA octet differ here.
+function key_identity(key: DNSKey): string {
+    return [
+        key.label.toLowerCase(),
+        key.flags,
+        key.protocol,
+        key.algorithm,
+        Buffer.from(key.key_data).toString('hex'),
+    ].join(' ');
+}
+
 export class DNSSecZone extends Zone {
     private seps: string[] = [];
+    private trusted_keys: Set<string> = new Set();
     private _parent: DNSSecZone | null = null;
     private _now: (() => Date) | null = null;
 
@@ -60,12 +74,28 @@ export class DNSSecZone extends Zone {
         return rrsig.inception <= t && t <= rrsig.expire;
     }
 
+    // add_sep marks name as a secure entry point. The mark is
+    // informational only: it does not authenticate any key. Use
+    // [add_trusted_key] for the specific keys that are trusted.
     add_sep(name: string): void {
         this.seps.push(name);
     }
 
     is_secure_entry_point(name: string): boolean {
         return this.seps.indexOf(name) !== -1;
+    }
+
+    // add_trusted_key records key as authenticated from outside the
+    // zone: it matched a configured trust anchor, or a DS record of the
+    // already-validated parent DS rrset. [verify_ksk] accepts exactly
+    // these keys (owner + full RDATA), never another key that only
+    // shares the owner name or the key tag.
+    add_trusted_key(key: DNSKey): void {
+        this.trusted_keys.add(key_identity(key));
+    }
+
+    is_trusted_key(key: DNSKey): boolean {
+        return this.trusted_keys.has(key_identity(key));
     }
 
     find_rrsigs(name: string, type_covered: number, signer?: string): RRSig[] {
@@ -89,19 +119,27 @@ export class DNSSecZone extends Zone {
         return result;
     }
 
-    find_dnskey(signer_name: string, keytag?: number): DNSKey | null {
+    // find_dnskeys returns every DNSKEY at signer_name matching keytag
+    // and algorithm (each filter applies only when given). Key tags
+    // are not unique (RFC 4034 Appendix B), so a verifier must try
+    // every candidate.
+    find_dnskeys(signer_name: string, keytag?: number, algorithm?: number): DNSKey[] {
         const dnskey_type = StringToRRType('DNSKEY');
-        const candidates = this.find_rrset(signer_name, dnskey_type);
-
-        for (const rr of candidates) {
+        const result: DNSKey[] = [];
+        for (const rr of this.find_rrset(signer_name, dnskey_type)) {
             const handler = rr.get_handler();
-            if (handler instanceof DNSKey) {
-                if (keytag === undefined || handler.key_tag === keytag) {
-                    return handler;
-                }
-            }
+            if (!(handler instanceof DNSKey)) continue;
+            if (keytag !== undefined && handler.key_tag !== keytag) continue;
+            if (algorithm !== undefined && handler.algorithm !== algorithm) continue;
+            result.push(handler);
         }
-        return null;
+        return result;
+    }
+
+    // find_dnskey returns the first DNSKEY found by [find_dnskeys], or
+    // null. Do not use it to pick the key that verifies an RRSIG.
+    find_dnskey(signer_name: string, keytag?: number): DNSKey | null {
+        return this.find_dnskeys(signer_name, keytag)[0] ?? null;
     }
 
     // Build the data-to-sign per RFC4034 Section 6.2
@@ -157,43 +195,43 @@ export class DNSSecZone extends Zone {
 
     // Verify a single RRSIG. A signature outside its validity window
     // fails when a clock is set (see [set_clock]).
+    //
+    // The RRSIG verifies when some DNSKEY at its signer with its key
+    // tag and algorithm both verifies the signature octets and is
+    // authorised for mode (see [key_authorised]). Every such DNSKEY is
+    // tried, since key tags collide. The SEP flag plays no part
+    // (RFC 4034 §2.1.1).
     verify_rrsig(name: string, type: number, rrsig: RRSig,
                  mode: KeyVerifyMode = KeyVerifyMode.None): boolean {
         if (!this.within_validity(rrsig)) return false;
 
-        // Find the corresponding DNSKEY
-        const dnskey = this.find_dnskey(rrsig.signer, rrsig.key_tag);
-        if (!dnskey) return false;
-
-        switch (mode) {
-        case KeyVerifyMode.ZSK:
-            if (!dnskey.is_secure_entry_point()) {
-                if (!this.verify_zsk(dnskey)) return false;
-            }
-            break;
-
-        case KeyVerifyMode.KSK:
-            if (dnskey.is_secure_entry_point()) {
-                if (!this.verify_ksk(dnskey)) return false;
-                if (type === StringToRRType('DNSKEY')) {
-                    // Signature on DNSKEY using ZSK is ignored for KSK mode
-                    return true;
-                }
-            }
-            break;
-
-        case KeyVerifyMode.CSK:
-            // CSK (Combined Signing Key) acts as both KSK and ZSK
-            if (dnskey.is_secure_entry_point()) {
-                if (!this.verify_ksk(dnskey)) return false;
-            }
-            break;
-        }
+        const candidates = this.find_dnskeys(rrsig.signer, rrsig.key_tag, rrsig.algorithm);
+        if (candidates.length === 0) return false;
 
         const digest_target = this.create_digest_target(rrsig, name, type);
         if (!digest_target) return false;
 
-        return dnskey.verify(digest_target, rrsig.signature);
+        return candidates.some((dnskey) =>
+            dnskey.verify(digest_target, rrsig.signature) && this.key_authorised(dnskey, mode));
+    }
+
+    // key_authorised reports whether dnskey may sign under mode:
+    //   None — any key (the caller has authenticated the DNSKEY rrset).
+    //   KSK  — dnskey itself is authenticated ([verify_ksk]).
+    //   ZSK  — dnskey belongs to a DNSKEY rrset that verifies in KSK
+    //          mode ([verify_zsk]).
+    //   CSK  — either of the above.
+    private key_authorised(dnskey: DNSKey, mode: KeyVerifyMode): boolean {
+        switch (mode) {
+        case KeyVerifyMode.KSK:
+            return this.verify_ksk(dnskey);
+        case KeyVerifyMode.ZSK:
+            return this.verify_zsk(dnskey);
+        case KeyVerifyMode.CSK:
+            return this.verify_ksk(dnskey) || this.verify_zsk(dnskey);
+        default:
+            return true;
+        }
     }
 
     // Verify RRSIGs for an RRset (RFC 4035: any-valid semantics)
@@ -214,10 +252,14 @@ export class DNSSecZone extends Zone {
         return false;
     }
 
+    // verify_ksk reports whether dnskey is authenticated from outside
+    // the zone (a trusted key, or a DS match in the parent).
     verify_ksk(dnskey: DNSKey): boolean {
         return this.verify_delegation_signer(dnskey);
     }
 
+    // verify_zsk reports whether the DNSKEY rrset holding dnskey
+    // verifies under an authenticated key ([verify_ksk]).
     verify_zsk(dnskey: DNSKey): boolean {
         return this.verify_rrset(dnskey.label, StringToRRType('DNSKEY'), KeyVerifyMode.KSK);
     }
@@ -228,15 +270,18 @@ export class DNSSecZone extends Zone {
         return this._parent.verify_rrset(child_name, StringToRRType('DS'));
     }
 
+    // verify_delegation_signer reports whether dnskey is authenticated:
+    // it was added with [add_trusted_key], or its DS digest matches a DS
+    // record at its owner in the parent zone. The caller must have
+    // validated that parent DS rrset. The zone's own DS records (which
+    // nothing has validated) and its SEP marks are not consulted.
     verify_delegation_signer(dnskey: DNSKey): boolean {
-        if (this.is_secure_entry_point(dnskey.label)) {
-            return true; // trust anchor reached
-        }
+        if (this.is_trusted_key(dnskey)) return true;
 
         // RFC 4035: DS records reside in the parent zone
-        const ds_source = this._parent || this;
+        if (!this._parent) return false;
         const ds_type = StringToRRType('DS');
-        const ds_records = ds_source.find_rrset(dnskey.label, ds_type);
+        const ds_records = this._parent.find_rrset(dnskey.label, ds_type);
         if (ds_records.length === 0) return false;
 
         // RFC 4035: any-valid semantics — at least one supported DS must match
