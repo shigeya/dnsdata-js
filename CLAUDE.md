@@ -26,9 +26,10 @@ wide-cpp-lib (C++) → dnsdata-js (TypeScript)   ← here
   no `tweetnacl`. Crypto comes from Node's built-in `crypto`; wire
   format and zone parsing are hand-rolled in this repo.
 - The public API must satisfy the MUST / SHOULD / MAY / MUST NOT
-  clauses in mailsec-probe `DESIGN.md §16`. Those clauses are mirrored
-  in [`DESIGN.md §4`](DESIGN.md) as the source of truth for the TS
-  contract (idiom-translated from the Go side).
+  clauses in mailsec-probe `DESIGN.md §16`, which is the source of
+  truth for the contract. [`DESIGN.md §4`](DESIGN.md) mirrors it,
+  translated into TypeScript idiom (dnsdata-go `DESIGN.md §4` is the
+  Go mirror); change all three together.
 - Public API shape:
   - `Verifier.validate(qname, qtype, signal?) → Promise<Result>` —
     chain validation
