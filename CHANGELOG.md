@@ -30,6 +30,19 @@ version?" question answerable at a glance.
   when its signature octets verify with the DNSKEY it names and that
   exact DNSKEY (owner and full RDATA) matched a configured trust
   anchor or a DS record of the validated parent DS rrset.
+- **A DNSKEY carried in the answer to any other query became a signing
+  key of the zone.** The verifier added every record of a response to
+  the zone, so a DNSKEY in the leaf answer or in a DS answer asked of
+  the zone joined it after its DNSKEY rrset had been authenticated, and
+  data signed by it (checked in `KeyVerifyMode.None`) validated Secure.
+  The same held for a DNSKEY at an unrelated owner whose name the
+  RRSIG gave as its signer. Affects every release (v0.1.0 through
+  v0.9.0). The verifier now takes a DNSKEY only from the answer to the
+  DNSKEY query for its owner name, and drops any other, from the zone
+  and from `Result.evidence.dnskeys`. Ports dnsdata-go `8b0f6b3`.
+- `DNSSecZone.verify_rrsig` with a `KeyVerifyMode` value other than
+  `None`, `KSK`, `ZSK` or `CSK` accepted any key; it now accepts none
+  (fails closed), as dnsdata-go does.
 
 ### Changed
 

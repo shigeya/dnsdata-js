@@ -370,9 +370,18 @@ async function load_records(
 // CNAME or DNAME themselves and put the target's rrset (same type,
 // different owner) into the same answer. Counting those would make
 // the caller look for a qname rrset that is not there.
+//
+// A DNSKEY is taken only from the answer to the DNSKEY query for its
+// own owner name, the rrset the descent authenticates. One carried in
+// any other answer is dropped (from z and from result.evidence): once
+// in z it would sign data checked in KeyVerifyMode.None without having
+// been authenticated.
 function apply_records(records: ResourceRecord[], z: DNSSecZone, name: string, qtype: number, result: Result): number {
     let matching = 0;
     for (const rr of records) {
+        if (rr.type === TYPE_DNSKEY && (qtype !== TYPE_DNSKEY || !equal_canonical_names(rr.label, name))) {
+            continue;
+        }
         z.add_rr(rr);
         if (rr.type === TYPE_DNSKEY) {
             push_evidence(result.evidence.dnskeys, rr.label, rr.value);

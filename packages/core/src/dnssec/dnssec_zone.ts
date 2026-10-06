@@ -221,8 +221,11 @@ export class DNSSecZone extends Zone {
     //   ZSK  — dnskey belongs to a DNSKEY rrset that verifies in KSK
     //          mode ([verify_zsk]).
     //   CSK  — either of the above.
+    //   any other value — no key (fails closed).
     private key_authorised(dnskey: DNSKey, mode: KeyVerifyMode): boolean {
         switch (mode) {
+        case KeyVerifyMode.None:
+            return true;
         case KeyVerifyMode.KSK:
             return this.verify_ksk(dnskey);
         case KeyVerifyMode.ZSK:
@@ -230,7 +233,7 @@ export class DNSSecZone extends Zone {
         case KeyVerifyMode.CSK:
             return this.verify_ksk(dnskey) || this.verify_zsk(dnskey);
         default:
-            return true;
+            return false;
         }
     }
 

@@ -182,6 +182,14 @@ describe("DNSSecZone", () => {
         expect(zone.verify_rrset("example.com.", 1, KeyVerifyMode.CSK)).toBe(true);
     });
 
+    it("an unknown key mode accepts no key (fails closed)", () => {
+        const { zone, keyTag } = create_test_zone();
+        zone.add_trusted_key(zone.find_dnskey("example.com.", keyTag)!);
+        const unknown = (KeyVerifyMode.KSK | KeyVerifyMode.ZSK) as KeyVerifyMode;
+        expect(zone.verify_rrset("example.com.", 1, unknown)).toBe(false);
+        expect(zone.verify_rrset("example.com.", 48, unknown)).toBe(false);
+    });
+
     it("verify_delegation_signer_with_ds checks algorithm match and digest", () => {
         const { zone, keyTag } = create_test_zone();
         const dnskey = zone.find_dnskey("example.com.", keyTag)!;
