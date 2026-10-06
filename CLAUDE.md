@@ -36,10 +36,12 @@ wide-cpp-lib (C++) → dnsdata-js (TypeScript)   ← here
   - `DoHClient` / `AuthClient` — DoH and direct-to-authoritative DNS
   - `dnssec/*` — DNSKEY / RRSIG / DS / NSEC / NSEC3 primitives
   - `wire/*`, `types/*` — lower-level primitives
-- Handler registration is **opt-in** at the public entry point. Callers
-  invoke `registerAllHandlers()` once at startup; importing
-  `@dnsdata/core` does not install anything (mirrors the Go side's
-  explicit `RegisterHandlers()` call).
+- Importing `@dnsdata/core` installs no RR handlers. Each `Verifier`
+  owns its own `Registry` (`VerifierOptions.registry`; by default the
+  DNSSEC handlers), so it needs no global registration. Code that parses
+  zones or builds records outside a Verifier fills the default registry
+  explicitly with `registerAllHandlers()` (mirrors the Go side's
+  `RegisterHandlers()` / `WithRegistry`).
 - Never call `process.exit`. Never write to `stdout` / `stderr` from
   library code. Never hold module-global state visible across `Verifier`
   instances — multiple `Verifier`s must be usable concurrently and

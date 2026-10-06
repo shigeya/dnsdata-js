@@ -86,6 +86,8 @@ interface VerifierOptions {
     trustAnchors?: RootAnchors;             // overrides IANA roots
     now?: () => Date;                       // clock for the RRSIG validity window
     cache?: Cache;                          // pluggable cache (UP-008)
+    registry?: Registry;                    // RR handlers (default: DNSSEC handlers)
+    onStep?: (e: StepEvent) => void;        // streamed verification steps
 }
 
 class Verifier {
@@ -101,6 +103,7 @@ interface Result {
     bogusAt?: string;
     bogusReason?: string;
     negativeReason?: string;
+    reasonCode?: ReasonCode;                // Bogus / Insecure; see result_error()
     aliases?: AliasStep[];                  // CNAME / DNAME hops (UP-005)
     wildcard?: WildcardInfo;                // wildcard synthesis (UP-006)
     evidence: Evidence;                     // presentation-form raw data
@@ -159,8 +162,14 @@ Idiom mapping applied:
    | `Verdict.Indeterminate` (v0.2.0-aligned six-state set; the two
    secure-negative states distinguish proven non-existence from
    "could not classify").
-3. `Result.chain` contains each zone's DNSKEY / DS tags, algorithms,
-   and the RRSIG verification trail.
+3. `Result.chain` contains each zone's DNSKEY / DS tags and
+   algorithms, the key that authenticated its DNSKEY rrset
+   (`signedBy`), and one RRSIG verification result per signature
+   examined (`signatures`: covered name and type, key tag, algorithm,
+   signer, validity window as RFC 3339 strings, and `verified` /
+   `expired` / `not-yet-valid` / `unsupported-algorithm` /
+   `no-matching-key` / `invalid`); a Bogus chain ends with the step of
+   the zone that failed.
 4. `Result.insecureAt` / `Result.bogusAt` returns the failure point as
    a string.
 4a. `Result.insecureReason` / `Result.bogusReason` explain the failure
@@ -201,21 +210,36 @@ Idiom mapping applied:
     unchanged so consumers that only know those still work; consumers
     wanting fine-grained negative results route on the dash-separated
     new ones).
-12. Errors are typed `Error` subclasses usable with `instanceof`:
-    `VerifierConfigError`, `VerifierInvalidQNameError`,
+12. Errors are typed `Error` subclasses usable with `instanceof`.
+    `validate()` rejects only when it cannot classify the query
+    (`VerifierConfigError`, `VerifierInvalidQNameError`,
     `VerifierResolverError`, `VerifierChainTimeoutError`,
-    `VerifierTrustAnchorMismatchError`. The Go side exposes
-    `errors.Is`-friendly sentinels; the TS side exposes class
-    discrimination. Category meanings stay in sync.
+    `VerifierError`); a Bogus or Insecure verdict is a result, not a
+    rejection. Such a result carries a machine-readable
+    `Result.reasonCode` (`no-ds`, `ds-mismatch`, `no-dnskey`,
+    `trust-anchor-mismatch`, `sig-expired`, `sig-invalid`,
+    `unsupported-algorithm`, ...), and `result_error(result)` returns
+    the matching subclass (`VerifierNoDSError`,
+    `VerifierDSMismatchError`, `VerifierNoDNSKEYError`,
+    `VerifierTrustAnchorMismatchError`, `VerifierSigExpiredError`,
+    `VerifierSigInvalidError`, `VerifierUnsupportedAlgoError`, ...;
+    the Bogus-only ones extend `VerifierBogusError`). The code strings
+    and the code → error mapping are the same as the Go side's
+    `Result.ReasonCode` / `Result.Err()`. Where the Go side returns
+    an Indeterminate `Result` together with an error (an RRSIG whose
+    algorithm is unsupported on a path that checks signature octets),
+    the TS side rejects with `VerifierUnsupportedAlgoError` and puts
+    that `Result` in its `.result`.
 
 ### SHOULD
 
 13. A pluggable cache layer (`VerifierOptions.cache`, interface
     `Cache`) so root / TLD DNSKEY rrsets can be reused across a batch
     run. Shipped in v0.4.0 (UP-008) with built-in `MemoryCache`.
-14. Streamable verification steps for verbose logging. The TS side
-    does not yet expose a `StepHandler` — tracked as a future
-    enhancement.
+14. Streamable verification steps for verbose logging
+    (`VerifierOptions.onStep?: (e: StepEvent) => void`, the same event
+    kinds as the Go side's `WithStepHandler`); events are delivered
+    synchronously and never after `validate()` settles.
 15. RR types accepted as `number` (16-bit). Matches the Go side's
     `uint16` and is compatible with `dns-packet`-style ecosystems.
 16. Memory efficiency acceptable when validating 100 domains in
@@ -232,14 +256,18 @@ Idiom mapping applied:
 
 20. Call `process.exit`.
 21. Produce side effects from importing `@dnsdata/core` that change
-    the handler registry. RR handler installation is opt-in via
+    the handler registry. No module registers anything at import
+    time. Installing handlers into the default registry is opt-in via
     `registerAllHandlers()` (or `register_dnssec_handlers` /
-    `register_legacy_handlers`); no module registers anything at
-    import time. As on the Go side, `signer.sign_zone` /
-    `signer.build_nsec` install the handlers they need when called.
+    `register_legacy_handlers`); as on the Go side,
+    `signer.sign_zone` / `signer.build_nsec` install the handlers
+    they need when called.
 22. Hold module-global state visible across `Verifier` instances.
     Multiple `Verifier`s must be independently configurable and
-    independently cancellable.
+    independently cancellable. Each `Verifier` has its own RR handler
+    `Registry` (`VerifierOptions.registry`; by default one holding
+    the DNSSEC handlers), so it works without
+    `registerAllHandlers()` and never changes the default registry.
 23. Write to the filesystem by default (only touch `~/.dnsdata/` when
     the caller explicitly opts in — the same directory the Go side
     uses).
