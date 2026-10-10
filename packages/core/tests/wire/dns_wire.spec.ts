@@ -2,6 +2,7 @@
 
 import {
     domain_name2wire,
+    domain_name2wire_preserve_case,
     wire2domain_name,
     parse_domain_name,
     build_query,
@@ -105,6 +106,30 @@ describe("Domain name wire format conversion library", () => {
             const wire = domain_name2wire("_x.");
             expect(wire[1]).toBe(0x5f);
             expect(wire[1]).not.toBe(0x7f);
+        });
+    });
+
+    // UF-008: the same encoding and limits as domain_name2wire, with
+    // every label byte copied verbatim.
+    describe("domain_name2wire_preserve_case (UF-008)", () => {
+        it("keeps the case of every label", () => {
+            const wire = domain_name2wire_preserve_case("Example123.NET.");
+            expect(wire).toEqual(new Uint8Array([
+                0x0a, 0x45, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x31, 0x32, 0x33,
+                0x03, 0x4e, 0x45, 0x54,
+                0x00,
+            ]));
+            expect(wire2domain_name(wire)).toBe("Example123.NET.");
+        });
+
+        it("encodes lower-case names as domain_name2wire does", () => {
+            test_vector.forEach(([domain_name, wire]) => {
+                expect(domain_name2wire_preserve_case(domain_name.toLowerCase())).toEqual(wire);
+            });
+        });
+
+        it("rejects a 64-octet label", () => {
+            expect(() => domain_name2wire_preserve_case(`${"A".repeat(64)}.`)).toThrow(/label too long/);
         });
     });
 

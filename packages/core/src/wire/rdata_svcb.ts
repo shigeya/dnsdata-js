@@ -5,7 +5,7 @@
 // the TLSA handler) reads back to the same octets — malformed RDATA
 // included — and rdata_to_string then writes the generic form.
 
-import { domain_name2wire, parse_domain_name } from './dns_wire';
+import { domain_name2wire_preserve_case, parse_domain_name } from './dns_wire';
 import { format_ipv4, format_ipv6, is_ipv4_mapped, IPV4_LENGTH, IPV6_LENGTH } from './ip_format';
 
 // usage(1) + selector(1) + matching type(1).
@@ -73,12 +73,12 @@ function uint16(b: Uint8Array, pos: number): number {
     return (b[pos] << 8) | b[pos + 1];
 }
 
-// The parser lowercases the target, does not follow compression, and
-// splits on whitespace.
+// The parser does not follow compression and splits on whitespace. It
+// keeps the case of the target (dnsdata-go UPSTREAM_FEEDBACK.md UF-008).
 function svcb_target_is_plain(target: string, raw: Uint8Array): boolean {
     if (/[ \t\r\n]/.test(target)) return false;
     try {
-        return Buffer.from(domain_name2wire(target)).equals(Buffer.from(raw));
+        return Buffer.from(domain_name2wire_preserve_case(target)).equals(Buffer.from(raw));
     } catch {
         return false;
     }

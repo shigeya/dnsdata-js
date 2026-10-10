@@ -6,7 +6,7 @@
 // and import them from here.
 
 import { WireBuilder } from '../wire/dns_wire_util';
-import { domain_name2wire } from '../wire/dns_wire';
+import { domain_name2wire_preserve_case } from '../wire/dns_wire';
 import { StringToRRType } from '../types/dns_type_table';
 import { ResourceRecord, ResourceRecordHandler } from '../zone/dns_zone';
 import { DNSZonePresentationFormatError } from '../dns_exception';
@@ -165,8 +165,11 @@ export class DNSRR_NSEC extends ResourceRecordHandler {
         return has_ns && !has_ds && !has_soa;
     }
 
+    // The next domain name keeps its case: RFC 6840 §5.1 takes NSEC off
+    // the RFC 4034 §6.2 list, so the canonical form does not lowercase it
+    // (dnsdata-go UPSTREAM_FEEDBACK.md UF-008).
     get_wire_body(builder: WireBuilder): void {
-        const next_wire = domain_name2wire(this.next_domain);
+        const next_wire = domain_name2wire_preserve_case(this.next_domain);
         builder.append_uint16(next_wire.length + this.type_bitmap.length);
         builder.append_bytes(next_wire);
         builder.append_bytes(this.type_bitmap);

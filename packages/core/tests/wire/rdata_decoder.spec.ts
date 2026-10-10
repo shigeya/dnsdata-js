@@ -317,7 +317,8 @@ describe('rdata_to_string TLSA / SMIMEA / SVCB / HTTPS', () => {
         ['ipv4hint ragged', TYPE_SVCB, '00010000040005c000020101', '\\# 12 00010000040005c000020101'],
         ['ipv6hint IPv4-mapped', TYPE_SVCB, '0001000006001000000000000000000000ffffc0000201',
             '\\# 23 0001000006001000000000000000000000ffffc0000201'],
-        ['uppercase target', TYPE_SVCB, '000103464f4f00', '\\# 7 000103464f4f00'],
+        // The parser keeps the target's case (dnsdata-go UF-008).
+        ['uppercase target', TYPE_SVCB, '000103464f4f00', '1 FOO.'],
         ['mandatory unsorted', TYPE_SVCB, '000100000000040003000100010003026832000300020035',
             '\\# 24 000100000000040003000100010003026832000300020035'],
         // Malformed RDATA stays generic, so one bad record does not fail a response.

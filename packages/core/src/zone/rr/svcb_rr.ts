@@ -11,7 +11,7 @@
 // HTTPS (type 65) uses the same RDATA encoding as SVCB (type 64).
 
 import { WireBuilder } from '../../wire/dns_wire_util';
-import { domain_name2wire, parse_domain_name } from '../../wire/dns_wire';
+import { domain_name2wire_preserve_case, parse_domain_name } from '../../wire/dns_wire';
 import { ResourceRecord, ResourceRecordHandler } from '../dns_zone';
 import { DNSZonePresentationFormatError, DNSZoneRDataFormatError } from '../../dns_exception';
 
@@ -215,9 +215,11 @@ export class DNSRR_SVCB extends ResourceRecordHandler {
         this.params = tokens.length > 2 ? parseSvcParams(tokens.slice(2)) : [];
     }
 
-    // RFC 9460 §2.2: Wire format
+    // RFC 9460 §2.2: Wire format. The target keeps its case: SVCB / HTTPS
+    // are not on the RFC 4034 §6.2 list, so their canonical form does not
+    // lowercase it (RFC 6840 §5.1; dnsdata-go UPSTREAM_FEEDBACK.md UF-008).
     get_wire_body(builder: WireBuilder): void {
-        const target_wire = domain_name2wire(this.target);
+        const target_wire = domain_name2wire_preserve_case(this.target);
 
         // Calculate SvcParams wire length
         let paramsLen = 0;

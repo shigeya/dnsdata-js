@@ -1,0 +1,55 @@
+; Signed by BIND 9.20.29 (dnssec-signzone, ECDSAP256SHA256, NSEC), then
+; rewritten one record per line by named-compilezone -s full. Owner names
+; and RDATA names are in mixed case; BIND keeps the case of the NSEC next
+; names and of the SVCB / HTTPS targets in the signed data
+; (RFC 6840 §5.1). Every RRSIG here must verify. UPSTREAM_FEEDBACK.md UF-008.
+case.example.				      300 IN SOA	ns.case.example. hostmaster.case.example. 1 3600 600 86400 300
+case.example.				      300 IN RRSIG	SOA 13 2 300 20360101000000 20260101000000 34870 case.example. Gmwl2QKpmZYJ8CWzMIPQ/3bDDtSxPIZStlwIQvM0b/JjPmDx6Uk6gijO IcSJfdDObC4Q1X8Fs0rje2tri/VcwA==
+; resign=20360101000000
+case.example.				      300 IN NS		ns.case.example.
+case.example.				      300 IN RRSIG	NS 13 2 300 20360101000000 20260101000000 34870 case.example. afgIvHwmMDV6itJSKtm1bhCBIgR4JDGnQocpeJowgTjm4SUWXBUa9qSD lCj6IvyrFcJbZ29g2GpdwtXzo4HqDQ==
+; resign=20360101000000
+case.example.				      300 IN NSEC	alias.case.example. NS SOA RRSIG NSEC DNSKEY
+case.example.				      300 IN RRSIG	NSEC 13 2 300 20360101000000 20260101000000 34870 case.example. 2ElrDfryByarp5wQ+xNoFlsNo7yEYzi3GUyaarztSRciAjm49zyOgLyY bHa4+Dirg/Aau8lw/UO/K5OIeed3uQ==
+; resign=20360101000000
+case.example.				      300 IN DNSKEY	256 3 13 dSBAe28mCNPkMwe45z3pWLmCYn9UFFV1MI+wFpExnjZWJicTqyyufpp+ 8QHc6x43t6TIKkWH3jRmydJgeCkSEA==
+case.example.				      300 IN DNSKEY	257 3 13 HZ6bAR9zIOfadWYAtzajAj2bfR05CuwwuluEuEFBqAiRpTlpceJR2n3G 9KY0cqgTePBfeuZvKJ5YhlNxQxq+BA==
+case.example.				      300 IN RRSIG	DNSKEY 13 2 300 20360101000000 20260101000000 4696 case.example. AtF8G7rbBSdRjpXcagK+tiwUVLtgmOHad4vUh3pOpt+RnU+DlBivIKd2 GzdcalgdxXTyiQOLjuL+0pvXnCIhOw==
+case.example.				      300 IN RRSIG	DNSKEY 13 2 300 20360101000000 20260101000000 34870 case.example. gQYREievJnsIciXp8320S6PihcOzqgwbh/q8wtXy+Lj0zj5EbXzSVgPT tD7ozPbs/icb9UCWTLYItSFUkszgzg==
+; resign=20360101000000
+alias.case.example.			      300 IN CNAME	Target-Host.Case.Example.
+alias.case.example.			      300 IN RRSIG	CNAME 13 3 300 20360101000000 20260101000000 34870 case.example. BxTxVInwp3ykVPLCX4Kc8i5mNYWD2CAW7qOV0uk9lv6SWOtZ6o8mVMLw bRJb8M+azCgplYdlNDu/NvoCKOcnxw==
+; resign=20360101000000
+alias.case.example.			      300 IN NSEC	Alpha.case.example. CNAME RRSIG NSEC
+alias.case.example.			      300 IN RRSIG	NSEC 13 3 300 20360101000000 20260101000000 34870 case.example. 0EHWcPclam24cLKmcI84IauSQ7jYUxtXorDWrILSs1C4XPI7qCBxrj21 04iQbXW17P9TmvHScabzM2i7UA2Yug==
+; resign=20360101000000
+Alpha.case.example.			      300 IN A		192.0.2.2
+Alpha.case.example.			      300 IN RRSIG	A 13 3 300 20360101000000 20260101000000 34870 case.example. 3EgHiQrCsN2b2m5dknl7Lht7bTMJZ2poqgchzlxm2pvDV1gkVso3Aicf 4ZNQxi1EH+luh/L4J1G/VK4uOq5o0g==
+; resign=20360101000000
+Alpha.case.example.			      300 IN NSEC	Mixed-Case.case.example. A RRSIG NSEC
+Alpha.case.example.			      300 IN RRSIG	NSEC 13 3 300 20360101000000 20260101000000 34870 case.example. lnZzGSMj52nOwksoAJYIp96ryqRus5QNHol2X22nl03faT3ai6OzrOli 4YdNDvGOH54I/cFjGVFCKSAPtqc0ew==
+; resign=20360101000000
+Mixed-Case.case.example.		      300 IN A		192.0.2.3
+Mixed-Case.case.example.		      300 IN RRSIG	A 13 3 300 20360101000000 20260101000000 34870 case.example. d2RtCenSFNxvJIobrHm7X+3UqZtPZZ1TmK0FqXLPuFFN/TKKrco/fJm6 AQI0ctvHRt/kQTdknvxRy5nfnyVKuA==
+; resign=20360101000000
+Mixed-Case.case.example.		      300 IN NSEC	ns.case.example. A RRSIG NSEC
+Mixed-Case.case.example.		      300 IN RRSIG	NSEC 13 3 300 20360101000000 20260101000000 34870 case.example. nPn+5oaZhiuqI4hq1zciOWxzL9D+gWs4WvZ8fl8DdPTo092HRt+PUs5l EqE6PUEQIo3tj1RwbkdZ9mOfJEHghA==
+; resign=20360101000000
+ns.case.example.			      300 IN A		192.0.2.1
+ns.case.example.			      300 IN RRSIG	A 13 3 300 20360101000000 20260101000000 34870 case.example. KKA7CcGiHMyny/9QPTLi+DY/6KbASvWuoT61Lianv+i4Y+PbM9oUCjYt 2X5seAqaXByxvQ+3vZuGvva+yGgg1g==
+; resign=20360101000000
+ns.case.example.			      300 IN NSEC	svc.case.example. A RRSIG NSEC
+ns.case.example.			      300 IN RRSIG	NSEC 13 3 300 20360101000000 20260101000000 34870 case.example. h1DgmNvNR6/TDFivduEd3HxZREk2x1VMVoiE0WTMt8Da8JlB0Dz+kYtT Nvhdj347zDfVJDHYjXAx6NNMK7BgLQ==
+; resign=20360101000000
+svc.case.example.			      300 IN NSEC	web.case.example. RRSIG NSEC SVCB
+svc.case.example.			      300 IN RRSIG	NSEC 13 3 300 20360101000000 20260101000000 34870 case.example. lKjCQaeghO6VzjtdYUJSGHU1ey65S7kqR86HWDc6FHiSoAPmzW3iKiPb bz02rKrahQTX4vdShEhvI/9uqKHuDw==
+; resign=20360101000000
+svc.case.example.			      300 IN SVCB	1 Target-Host.Case.Example. alpn="h2"
+svc.case.example.			      300 IN RRSIG	SVCB 13 3 300 20360101000000 20260101000000 34870 case.example. y4Q9bvy08cRTgl3q6Oe2B9cmXWaEG62tytknrRPCN+xNpM6OUU7H0rRU b9/Ez+kNQR1nYv53vBpA15HLtDPSeg==
+; resign=20360101000000
+web.case.example.			      300 IN NSEC	case.example. RRSIG NSEC HTTPS
+web.case.example.			      300 IN RRSIG	NSEC 13 3 300 20360101000000 20260101000000 34870 case.example. ESXVBVXjXl1PueYmqXV+KPEhIoTyP0SpZHiJJm3Plg22NXYN1hM/nTjt KsZ00aCfI2aEJsjtYMNYqQArCXaaEQ==
+; resign=20360101000000
+web.case.example.			      300 IN HTTPS	1 Web-Host.Case.Example.
+web.case.example.			      300 IN RRSIG	HTTPS 13 3 300 20360101000000 20260101000000 34870 case.example. omfkbr1zYn+WqKN4cJsZIZEjOJ2NAjUU2XiAo/6UT+062OoharIYgumd 4newMNZEKQM8O30BBNWhvElcmcwx/g==
+; resign=20360101000000

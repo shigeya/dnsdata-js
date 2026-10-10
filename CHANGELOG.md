@@ -14,6 +14,31 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+### Fixed
+
+- Names in the RDATA of NSEC, SVCB and HTTPS keep their case on the
+  wire. They were lowercased like the names of the types on the
+  RFC 4034 §6.2 list, but RFC 6840 §5.1 takes NSEC off that list and
+  SVCB / HTTPS were never on it, so their canonical form keeps the case.
+  Signatures made by other signers (BIND `dnssec-signzone` keeps the
+  case) over an NSEC with a mixed-case next name, or over an SVCB /
+  HTTPS with a mixed-case target, failed to verify — through the
+  resolvers for NSEC, and for zone text for all three. NS, CNAME, MX,
+  SRV, NAPTR, RP, SOA, RRSIG and the other list types are still
+  lowercased. A test vector signed by BIND is in `tests/testdata/bind/`
+  (dnsdata-go UF-008).
+
+### Added
+
+- `domain_name2wire_preserve_case`: `domain_name2wire` without the
+  lowercasing.
+
+### Changed
+
+- `rdata_to_string` prints an SVCB / HTTPS whose target has upper-case
+  letters in presentation form instead of the RFC 3597 generic form,
+  since the zone parser now reads it back octet for octet.
+
 ## [0.10.1] — 2026-10-06
 
 Completes the 0.10.0 migration note for code that relied on the zone

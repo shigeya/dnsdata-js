@@ -105,6 +105,7 @@ mechanical. TS paths are relative to `packages/core/src/`:
 | `resolver/memory/*_test.go`               | `../tests/resolver/memory/*.spec.ts` | Hierarchy, authority, example and shared-vector tests (UP-014) |
 | `testdata/rdata_roundtrip.json`           | `../tests/testdata/rdata_roundtrip.json` | Shared RDATA round-trip vectors; byte-identical, generated on the Go side only (UP-010) |
 | `testdata/signed/`                        | `../tests/testdata/signed/`          | Shared signed hierarchy and expected verdicts; byte-identical, generated on the Go side only |
+| `testdata/bind/`                          | `../tests/testdata/bind/`            | A zone signed by BIND with mixed-case names (UF-008); byte-identical, copied from the Go side |
 | (distributed via per-package `errors.go`) | `dns_exception.ts`                   | TS-specific exception hierarchy (`DNSWireError`, `UnknownOpCodeError`, …); Go uses sentinel `errors.Is`-friendly vars per package |
 
 ## Drift policy

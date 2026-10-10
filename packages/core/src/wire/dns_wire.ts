@@ -20,6 +20,21 @@ function ascii_to_lower(c: number): number {
 }
 
 export function domain_name2wire(domain_name: string): Uint8Array {
+    return encode_domain_name(domain_name, ascii_to_lower);
+}
+
+// domain_name2wire_preserve_case is domain_name2wire without the
+// lowercasing: every byte of every label is copied verbatim. It encodes
+// names in the RDATA of types that are not on the RFC 4034 §6.2 list of
+// types whose canonical form lowercases embedded names — NSEC (removed
+// from the list by RFC 6840 §5.1) and every type defined later, such as
+// SVCB / HTTPS. dnsdata-go UPSTREAM_FEEDBACK.md UF-008.
+export function domain_name2wire_preserve_case(domain_name: string): Uint8Array {
+    return encode_domain_name(domain_name, (c) => c);
+}
+
+// encode_domain_name is the shared encoder; fold maps each label byte.
+function encode_domain_name(domain_name: string, fold: (c: number) => number): Uint8Array {
     const bytes: number[] = [];
     const d = domain_name;
     const l = d.length;
@@ -41,7 +56,7 @@ export function domain_name2wire(domain_name: string): Uint8Array {
             }
             bytes.push(labelLen); // length
             for (let k = i; k < j; k++) {
-                bytes.push(ascii_to_lower(d.charCodeAt(k)));
+                bytes.push(fold(d.charCodeAt(k)));
             }
         } else if (j < l && i !== 0) {
             // An empty label mid-name (e.g. "a..b") is invalid.
