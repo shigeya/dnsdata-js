@@ -14,6 +14,18 @@ version?" question answerable at a glance.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-10
+
+Names in the RDATA of NSEC, SVCB and HTTPS keep their case on the wire,
+as RFC 4034 §6.2 with RFC 6840 §5.1 requires, so signatures made by
+other signers (BIND keeps the case) over mixed-case NSEC next names and
+SVCB / HTTPS targets verify. The NSEC case affected denial-of-existence
+proofs from any zone with a mixed-case owner name. Adds
+`domain_name2wire_preserve_case`. **Re-sign** zones signed by
+`dnssec/signer` up to 0.10.1 that have upper-case letters in owner
+names, NSEC next names or SVCB / HTTPS targets. Ports dnsdata-go
+v0.11.0; coordinated release with it.
+
 ### Fixed
 
 - Names in the RDATA of NSEC, SVCB and HTTPS keep their case on the

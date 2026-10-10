@@ -330,6 +330,7 @@ captures the high-level milestones.
 | v0.9.1 | Security: a DNSKEY rrset verifies only under the exact KSK matched by the parent DS or a trust anchor (`add_trusted_key`); a DNSKEY is taken only from its own DNSKEY answer | — |
 | v0.10.0 | `Result.reasonCode` / `result_error()`; `ZoneStep.signatures` (per-RRSIG results); `VerifierOptions.onStep`; a handler `Registry` per Verifier (`VerifierOptions.registry`), no `registerAllHandlers()` needed; `ZoneStep.dsDigests` filled; MUST 4a – 4d added to the contract | — |
 | v0.10.1 | `VerifierOptions.zoneHandlers` (the zone handlers in a Verifier's own registry, for answers without RDATA octets); the 0.10.0 migration note for zone handlers completed | — |
+| v0.11.0 | NSEC next names and SVCB / HTTPS targets keep their case on the wire (RFC 6840 §5.1); `domain_name2wire_preserve_case`; a zone signed by BIND with mixed-case names in `tests/testdata/bind/` | UF-008 |
 
 Coordinated with mailsec-probe Phase 3.0 (target: mailsec-probe v0.1.0
 → v0.3.0).
